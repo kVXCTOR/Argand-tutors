@@ -359,10 +359,12 @@ button.row:hover::before{opacity:1;}
     </div>
     <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
       <b style="color:var(--ink);display:block;margin-bottom:6px;">How booking works</b>
-      Pick a tutor or a subject, choose a time, verify your email, and pay. A joining link is emailed straight away.
+      Pick a tutor or a subject, choose a time and confirm your email. Your tutor arranges payment with you
+      directly, and your booking details are emailed straight away.
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Cancellation</b>
-      Free to move or cancel up to 24 hours before a session. Inside 24 hours the session is charged in full.
+      Free to cancel up to 24 hours before a session, using the link in your confirmation email.
+      Inside 24 hours the session is charged in full.
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Why Argand</b>
       The Argand diagram plots real against imaginary. We plot four subjects against the people who sat them most recently.
@@ -377,12 +379,12 @@ button.row:hover::before{opacity:1;}
       <div class="card-pad" style="padding-top:0;text-align:center;">
         <div id="rail-avatar" style="margin:-36px auto 0;width:64px;"></div>
         <div class="rail-name" id="rail-name">Booking as a guest</div>
-        <div class="rail-sub" id="rail-sub">No account needed</div>
+        <div class="rail-sub" id="rail-sub">Book without an account</div>
       </div>
       <div class="rail-stats">
         <div class="rail-stat"><span>Subjects</span><b id="stat-subjects">0</b></div>
         <div class="rail-stat"><span>Tutors</span><b id="stat-tutors">0</b></div>
-        <div class="rail-stat"><span>Your bookings</span><b id="stat-bookings">0</b></div>
+        <div class="rail-stat"><span>Booking?</span><b style="color:var(--ink-2);font-weight:400;">no account needed</b></div>
       </div>
       <div class="rail-links" id="rail-links"></div>
     </div>
@@ -435,6 +437,14 @@ const LENGTHS = [
   {mins:90, label:"90 min", mult:1.45, blocks:2}
 ];
 let CONFIG = { paymentsEnabled:false, brand:BRAND };
+
+// Remembering the tutor's session across refreshes. Wrapped because some
+// embedded browsers block storage entirely — losing it just means signing in again.
+const store = {
+  get(k){ try { return window.localStorage.getItem(k); } catch { return null; } },
+  set(k, v){ try { window.localStorage.setItem(k, v); } catch {} },
+  clear(k){ try { window.localStorage.removeItem(k); } catch {} }
+};
 
 /* ---------- talking to the server ---------- */
 async function api(path, opts = {}) {
@@ -705,8 +715,7 @@ function render(){
 function rails(){
   document.getElementById("stat-subjects").textContent = SUBJECTS.length;
   document.getElementById("stat-tutors").textContent = TUTORS.length;
-  const live = BOOKINGS.filter(b => b.status === "confirmed").length;
-  document.getElementById("stat-bookings").textContent = live;
+  const live = (manageToken ? BOOKINGS.filter(b => b.status === "confirmed") : []).length;
   const pip = document.getElementById("pip");
   pip.hidden = !live; pip.textContent = live;
 
@@ -715,7 +724,7 @@ function rails(){
     ? avatarHtml(t, "lg", true)
     : `<div class="avatar avatar-lg avatar-ring" style="background:#8c6d4f;">G</div>`;
   document.getElementById("rail-name").textContent = t ? t.name : "Booking as a guest";
-  document.getElementById("rail-sub").textContent = t ? "Signed in as a tutor" : "No account needed";
+  document.getElementById("rail-sub").textContent = t ? "Signed in as a tutor" : "Book without an account";
   document.getElementById("rail-links").innerHTML = t
     ? `<button data-go="#/staff/dashboard">Dashboard</button>
        <button data-go="#/staff/availability">My availability</button>
@@ -740,7 +749,8 @@ function statementCard(){
   return `<div class="card">
     <div class="statement">
       <h2>Taught by people who sat these papers recently</h2>
-      <p>Every Argand tutor earned an <b>A*</b> in the subject they teach, and most of them sat it within the last three years — on the specification being examined right now.</p>
+      <p>Every Argand tutor earned an <b>A*</b> in the subject they teach, and they're all currently at university —
+      so most sat these papers recently, on the specification being examined now.</p>
       <p>That matters more than it sounds. Specifications get reworked, mark schemes drift, and the gap between a grade 7 and a grade 9 is usually about how an answer is written rather than whether the student knows the material. Our tutors remember that from the inside, because they were in that exam hall themselves not long ago.</p>
       <p>None of which replaces a good classroom teacher. It's a second perspective, one to one, from someone who has recently stood exactly where your child is standing.</p>
     </div>
@@ -824,8 +834,8 @@ function tutorRow(t){
       <div style="margin-top:8px;">${gradesHtml(t)}</div>
       <div class="row-note">
         <span class="badge badge-green">★ ${t.rating}</span>
-        <span>${t.reviews} reviews</span><span class="dot"></span>
-        <span>${t.hours} hours tutored</span><span class="dot"></span>
+        ${t.reviews ? `<span>${t.reviews} reviews</span><span class="dot"></span>` : ""}
+        ${t.hours ? `${t.hours ? `<span>${t.hours} hours tutored</span>` : ""}<span class="dot"></span>` : ""}
         <span class="weekstrip" title="Availability over the next week">${weekStrip(t.id)}</span>
       </div>
     </div>
@@ -870,7 +880,8 @@ function viewTutors(){
 
     <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
       <b style="color:var(--ink);display:block;margin-bottom:4px;">How we hire</b>
-      We take roughly one applicant in twelve. An A* in the subject is the entry requirement, not the whole test — every tutor also holds an enhanced DBS certificate and teaches a mock session to one of us before they are given a student.
+      Every application is read by the owner and no account exists until it's approved by hand. An A* in the
+      subject is the minimum, and we ask for a DBS certificate before anyone is given a student.
     </div>`;
 }
 
@@ -894,7 +905,7 @@ function viewProfile(){
           <div class="detail-sub" style="font-size:13px;">${t.year} · sat A-Levels in ${t.sat}</div>
           <div class="row-note" style="margin-top:8px;">
             ${t.rating ? `<span class="badge badge-green">★ ${t.rating}</span><span>${t.reviews} reviews</span><span class="dot"></span>` : ""}
-            <span>${t.hours} hours tutored</span>
+            ${t.hours ? `<span>${t.hours} hours tutored</span>` : ""}
             ${t.buffer ? `<span class="dot"></span><span>${t.buffer} min gap between sessions</span>` : ""}
           </div>
         </div>
@@ -942,7 +953,7 @@ function viewProfile(){
       </div>
     </div>
 
-    <div class="card">
+    ${!t.said.length ? "" : `<div class="card">
       <div class="card-head">Reviews<span class="sub">${t.reviews} total</span></div>
       ${t.said.map(r => `
         <div class="review">
@@ -953,7 +964,7 @@ function viewProfile(){
             <p>${r.text}</p>
           </div>
         </div>`).join("")}
-    </div>`;
+    </div>`}`;
 }
 
 function viewSubject(){
@@ -1028,7 +1039,7 @@ function viewBook(){
           <div class="uni" style="margin-top:4px;">${CAP}<span>${t.course}, ${t.uni}</span></div>
           <div class="row-note" style="margin-top:6px;">
             <span class="badge badge-green">★ ${t.rating}</span>
-            <span>${t.hours} hours tutored</span><span class="dot"></span>
+            ${t.hours ? `${t.hours ? `<span>${t.hours} hours tutored</span>` : ""}<span class="dot"></span>` : ""}
             <button style="background:none;border:none;color:var(--blue);font-weight:600;padding:0;font-size:12px;"
               data-go="#/profile/${t.id}">Full profile</button>
           </div>
@@ -1066,11 +1077,17 @@ function viewBook(){
 }
 
 function viewBookings(){
-  if(!BOOKINGS.length){
-    main.innerHTML = `<div class="card"><div class="card-head">Your bookings</div>
-      <div class="empty"><b>No bookings yet</b>
-      Once you book a session it appears here, and the same details are emailed to you as a link you can open anywhere.
-      <div style="margin-top:16px;"><button class="btn btn-primary" data-go="#/tutors">Meet our tutors</button></div></div></div>`;
+  if(!BOOKINGS.length || !manageToken){
+    main.innerHTML = `<div class="card">
+      <div class="card-head">Find your booking</div>
+      <div class="empty"><b>Your booking lives in your email</b>
+        You don't need an account with us. When you book, we email you the details and a private link
+        for viewing or cancelling that session — open that link and it loads here.
+        <div style="margin-top:16px;"><button class="btn btn-primary" data-go="#/tutors">Book a session</button></div>
+      </div></div>
+      <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
+        Can't find the email? Check your spam folder, then get in touch and we'll resend it.
+      </div>`;
     return;
   }
   main.innerHTML = `
@@ -1087,21 +1104,20 @@ function viewBookings(){
             <div class="row-note">
               <span class="badge ${b.status==="confirmed"?"badge-green":"badge-red"}">${b.status==="confirmed"?"Confirmed":"Cancelled"}</span>
               <span class="ref">${b.ref}</span><span class="dot"></span><span>${money(b.price)} paid</span>
-              ${b.status==="confirmed"?`<span class="dot"></span><span>${free?"Free to move or cancel":"Inside 24 hours — no refund"}</span>`:""}
+              ${b.status==="confirmed"?`<span class="dot"></span><span>${free?"Free to cancel":"Inside 24 hours — no refund"}</span>`:""}
             </div>
             ${b.note ? `<div class="notebox"><b>Note from ${tutor(b.tutorId).name.split(" ")[0]}:</b> ${esc(b.note)}</div>` : ""}
           </div>
           <div class="row-side">
             ${b.status==="confirmed"?`
               <button class="btn btn-outline btn-sm" data-ics="${b.ref}">Add to calendar</button>
-              <button class="btn btn-outline btn-sm" data-resched="${b.ref}">Reschedule</button>
               <button class="btn btn-danger btn-sm" data-cancel="${b.ref}">Cancel</button>`:""}
           </div>
         </div>`;
       }).join("")}
     </div>
     <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
-      This list lives in memory for the demo. In the real build it loads from a signed link in the confirmation email, so customers never need an account.
+      Loaded from the private link in your confirmation email. Keep that email — it's how you get back here.
     </div>`;
 }
 
@@ -1126,7 +1142,7 @@ function viewLogin(){
       <div class="auth-title">Tutor sign in</div>
       <div class="auth-sub">Manage your availability, profile and sessions</div>
       <div class="field" id="f-lemail"><label for="i-lemail">Email</label>
-        <input id="i-lemail" type="email" autocomplete="username" value="priya@${DOMAIN}">
+        <input id="i-lemail" type="email" autocomplete="username" placeholder="you@example.com">
         <div class="err">Enter the email your invitation was sent to.</div></div>
       <div class="field" id="f-lpw"><label for="i-lpw">Password</label>
         <input id="i-lpw" type="${state.showPw?"text":"password"}" autocomplete="current-password">
@@ -1135,7 +1151,8 @@ function viewLogin(){
       <button class="forgot" id="forgot">Forgot password?</button>
       <button class="btn btn-primary btn-block" id="signin">Sign in</button>
       <div class="auth-alt">Don't have an account yet? <button data-go="#/apply">Apply to tutor</button></div>
-      <div class="note"><b>Demo:</b> sign in with <b>priya@${DOMAIN}</b> / <b>demo1234</b>.</div>
+      <div class="hint" style="text-align:center;margin-top:14px;">
+        Tutors only. If you're booking a session you don't need an account.</div>
     </div>`;
   setTimeout(() => document.getElementById("i-lpw")?.focus(), 30);
 }
@@ -1296,10 +1313,10 @@ function viewEdit(){
     </div>
 
     <div class="card">
-      <div class="card-head">A-Level results<span class="sub">Verified by the admin</span></div>
+      <div class="card-head">A-Level results<span class="sub">From your application</span></div>
       <div class="card-pad">
         ${gradesHtml(t)}
-        <div class="hint" style="margin-top:8px;">Sat in ${t.sat}. Grades are set from your certificates when your account is created and can't be edited here.</div>
+        <div class="hint" style="margin-top:8px;">Taken from your application. To correct these, email the owner — they can't be edited here.</div>
       </div>
     </div>
 
@@ -1359,8 +1376,9 @@ function viewApply(){
         <div class="card-pad">
           <div style="font-size:20px;font-weight:600;">Apply to tutor with Argand</div>
           <p style="color:var(--ink-2);margin-top:2px;">
-            We take current undergraduates with an A* in what they want to teach. Applications go to the owner
-            for approval, who sends back a confirmation code to activate your account.
+            We take current undergraduates with an A* in whatever they want to teach. Your application goes to
+            the owner, who sends back a confirmation code if they'd like you on the team. Nothing is created
+            until then.
           </p>
           ${state.applyErr ? `<div class="note" style="background:rgba(178,64,32,.1);border-color:var(--red);margin-bottom:14px;">${esc(state.applyErr)}</div>` : ""}
 
@@ -1427,9 +1445,9 @@ function viewApply(){
         <div class="card-pad">
           <div style="font-size:20px;font-weight:600;">Application received</div>
           <p style="color:var(--ink-2);">
-            Thanks ${esc(state.applyForm.name.split(" ")[0] || "")} — your application has gone to
-            the owner at <b style="color:var(--ink);">owner@${DOMAIN}</b>. Once they approve it they'll send you a
-            six-digit confirmation code. Enter it below to activate your account.
+            Thanks ${esc(state.applyForm.name.split(" ")[0] || "")} — your application has gone to the owner.
+            If they're happy to take you on, they'll send you a six-digit confirmation code.
+            Enter it below to activate your account.
           </p>
           <div class="otp">${[0,1,2,3,4,5].map(i => `<input inputmode="numeric" maxlength="1" data-otp="${i}" aria-label="Digit ${i+1}">`).join("")}</div>
           <div class="field" id="fa-code" style="text-align:center;"><div class="err" id="apply-code-err">That code isn't right.</div></div>
@@ -1575,7 +1593,7 @@ function drawModal(){
     mTitle.textContent = "Payment";
     mBody.innerHTML = recapHtml() + `
       <div class="stripe-slot">Stripe Elements mounts here.<br>No card fields exist in this draft, by design.</div>
-      <p style="font-size:12px;color:var(--ink-2);margin:0;">Free to move or cancel up to 24 hours before the session. After that it is charged in full.</p>`;
+      <p style="font-size:12px;color:var(--ink-2);margin:0;">Free to cancel up to 24 hours before the session. After that it is charged in full.</p>`;
     mFoot.innerHTML = `<button class="btn btn-primary btn-block" id="next">Pay ${money(orderTotal())}</button>`;
   }
   if(state.step === "done"){
@@ -1600,7 +1618,7 @@ function drawModal(){
         ${lastOrder.skipped.length ? `<div class="notebox" style="text-align:left;">
           ${lastOrder.skipped.length} week${lastOrder.skipped.length>1?"s were":" was"} skipped because the slot wasn't free
           (${lastOrder.skipped.join(", ")}). You haven't been charged for ${lastOrder.skipped.length>1?"those":"that"}.</div>` : ""}
-        <p style="color:var(--ink-2);font-size:13px;">Confirmation and joining link on the way to ${esc(b.email)}, with reminders 24 hours and 1 hour before.</p>
+        <p style="color:var(--ink-2);font-size:13px;">Your booking details are on the way to ${esc(b.email)}, including a private link for cancelling if you need to.</p>
         <button class="btn btn-outline btn-sm" data-ics="${b.ref}">Add to calendar</button></div>
       ${manageToken ? `<div class="notebox" style="text-align:left;">Keep the confirmation email \u2014 it has your link
         for moving or cancelling this booking.</div>` : ""}`;
@@ -1652,7 +1670,7 @@ function drawModal(){
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note]");
   if(el){
-    if(el.dataset.signout !== undefined){ state.signedIn = null; state.token = null; toast("Signed out."); return go("#/"); }
+    if(el.dataset.signout !== undefined){ state.signedIn = null; state.token = null; store.clear("argand_token"); toast("Signed out."); return go("#/"); }
     if(el.dataset.go){ if(el.dataset.go.startsWith("#/staff")) dashLoaded = false; return go(el.dataset.go); }
     if(el.dataset.level){ state.level = el.dataset.level; return render(); }
     if(el.dataset.area){ state.area = el.dataset.area; return render(); }
@@ -1815,6 +1833,7 @@ document.addEventListener("click", e => {
     api("/api/login", {method:"POST", body:{email, password:pw}})
       .then(async r => {
         state.token = r.token;
+        store.set("argand_token", r.token);
         await loadTutors();
         if(!tutor(r.tutor.id)) TUTORS.push(adopt(r.tutor));
         state.signedIn = r.tutor.id;
@@ -1961,6 +1980,15 @@ main.innerHTML = `<div class="card card-pad"><div class="empty">Loading…</div>
       SUBJECTS.length = 0; SUBJECTS.push(...cfg.subjects);
     }
     await loadTutors();
+    const saved = store.get("argand_token");
+    if(saved){
+      state.token = saved;
+      try {
+        const me = await api("/api/me");
+        if(!tutor(me.id)) TUTORS.push(adopt(me));
+        state.signedIn = me.id;
+      } catch { state.token = null; store.clear("argand_token"); }
+    }
   } catch (err) {
     main.innerHTML = `<div class="card"><div class="card-head">Can't reach the server</div>
       <div class="empty"><b>${esc(err.message)}</b>Check the terminal window running the site is still open, then reload.</div></div>`;

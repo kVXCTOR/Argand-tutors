@@ -465,6 +465,17 @@ async function cancelBooking(req, res, token) {
   b.status = "cancelled"; b.cancelledAt = new Date().toISOString(); b.refundDue = free ? b.price : 0;
   save(db);
   const t = db.tutors.find(x => x.id === b.tutorId);
+  const waiting = db.waitlist.filter(w => w.tutorId === b.tutorId && w.day === b.day && w.hour === b.hour);
+  if (waiting.length) {
+    for (const w of waiting) {
+      sendEmail(w.email, "A slot has opened up \u2014 " + b.day, wrap(
+        `<p>The ${String(b.hour).padStart(2, "0")}:00 session on ${b.day} with ${esc(t ? t.name : "your tutor")} is free again.</p>
+         <p>It's first come, first served \u2014 <a href="${PUBLIC_URL}/#/profile/${b.tutorId}">book it here</a>.</p>`)
+      ).catch(e => console.error("Waitlist email failed:", e.message));
+    }
+    db.waitlist = db.waitlist.filter(w => !waiting.includes(w));
+    save(db);
+  }
   if (t) sendEmail(t.email, "Cancelled \u2014 " + subjectById(b.subjectId).name + ", " + b.day, wrap(
     `<p>${esc(b.name)} cancelled their ${b.day} session at ${String(b.hour).padStart(2, "0")}:00.</p>
      <p style="font-size:13px;color:#555">${free ? "More than 24 hours' notice \u2014 refund due." : "Inside 24 hours \u2014 chargeable under the policy."}</p>`)
