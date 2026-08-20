@@ -9,7 +9,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const PORT = process.env.PORT || 3000;
-const OWNER_EMAIL = process.env.OWNER_EMAIL || "owner@argandtutors.co.uk";
+const OWNER_EMAIL = process.env.OWNER_EMAIL ||;
 const FROM_EMAIL = process.env.FROM_EMAIL || "Argand Tutors <noreply@argandtutors.co.uk>";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || null;
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
