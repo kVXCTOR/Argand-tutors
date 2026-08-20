@@ -427,77 +427,69 @@ const SUBJECTS = [
    desc:"Data structures, OOP, theory of computation and NEA supervision from specification to evaluation."}
 ];
 
-const TUTORS = [
-  {id:1, name:"Priya Raman", colour:"#2743c4", premium:4, hours:310, rating:4.9, reviews:64, buffer:15, photo:null,
-   uni:"University of Warwick", course:"MMath Mathematics", year:"Third year", sat:2023,
-   grades:[{s:"Maths", g:"A*"},{s:"Further Maths", g:"A*"},{s:"Physics", g:"A*"}],
-   headline:"Maths and Further Maths · Warwick",
-   bio:"I sat Edexcel maths and further maths in 2023 and I still have every one of my revision notes, which is roughly how I teach. I am most useful on the questions where you know the content but lose marks on the write-up — proof by induction, vectors, and anything asking you to justify rather than calculate.",
-   subjects:[1,2,5,6], avail:{1:[9,17], 2:[9,17], 3:[14,20], 4:[9,17], 5:[9,13]}, blocked:[],
-   said:[{who:"Hannah M.", ctx:"A-Level Maths · parent", stars:5, text:"My daughter went from a predicted C to an A over two terms. Priya sends a summary after every session so we knew exactly what was being worked on."},
-         {who:"Josh T.", ctx:"GCSE Further Maths", stars:5, text:"She spots the exact step where I go wrong instead of just redoing the whole question. Sounds small, made a huge difference."}]},
-
-  {id:2, name:"Tom Whitfield", colour:"#0f766e", premium:2, hours:180, rating:4.7, reviews:41, buffer:15, photo:null,
-   uni:"University of Oxford", course:"MPhys Physics", year:"Second year", sat:2024,
-   grades:[{s:"Physics", g:"A*"},{s:"Maths", g:"A*"},{s:"Chemistry", g:"A"}],
-   headline:"Physics · Oxford",
-   bio:"I took AQA physics in 2024, so the required practicals and the current six-mark question style are still fresh. Sessions start from whatever you last got wrong rather than from the top of the specification, and I am unreasonably enthusiastic about fields.",
-   subjects:[3,7], avail:{1:[16,21], 2:[16,21], 3:[16,21], 6:[10,16]}, blocked:[],
-   said:[{who:"Deniz K.", ctx:"A-Level Physics", stars:5, text:"Explains the derivations properly rather than telling you to memorise the result. Evening slots meant I could fit it around sixth form."},
-         {who:"Rachel B.", ctx:"GCSE Physics · parent", stars:4, text:"Very good with a nervous student. Occasionally runs a couple of minutes over, which we didn't mind at all."}]},
-
-  {id:3, name:"Daniel Okafor", colour:"#4a3a86", premium:3, hours:420, rating:4.8, reviews:97, buffer:0, photo:null,
-   uni:"Imperial College London", course:"BSc Mathematics", year:"Final year", sat:2022,
-   grades:[{s:"Maths", g:"A*"},{s:"Further Maths", g:"A*"},{s:"Economics", g:"A*"}],
-   headline:"Maths · Imperial",
-   bio:"Four years of tutoring alongside my degree and about four hundred hours of sessions. I run short timed drills every week, because at GCSE and A-Level pace costs as many marks as gaps in knowledge do, and pace is the easier of the two to fix.",
-   subjects:[1,5], avail:{2:[15,20], 4:[15,20], 5:[15,19], 6:[9,14]}, blocked:[],
-   said:[{who:"Amara O.", ctx:"GCSE Maths · parent", stars:5, text:"He showed my son how method marks are actually awarded and his mock jumped two grades. Worth every penny."},
-         {who:"Leo F.", ctx:"A-Level Maths", stars:5, text:"Timed drills every week were brutal and completely worth it."}]},
-
-  {id:4, name:"Alice Brennan", colour:"#b24020", premium:5, hours:240, rating:4.9, reviews:58, buffer:15, photo:null,
-   uni:"University of Manchester", course:"MEng Computer Science", year:"Third year", sat:2023,
-   grades:[{s:"Computer Science", g:"A*"},{s:"Maths", g:"A*"},{s:"Physics", g:"A"}],
-   headline:"Computer Science · Manchester",
-   bio:"I took OCR computer science in 2023 and I supervise NEA projects, which is where most of the grade is quietly won or lost. Happy to work in Python, Java or pseudocode depending on your board, and I set real code to work through between sessions.",
-   subjects:[4,8], avail:{1:[10,15], 3:[10,15], 4:[16,21], 5:[10,16]}, blocked:[],
-   said:[{who:"Sam W.", ctx:"A-Level Computer Science", stars:5, text:"My NEA had no clear scope and she got it down to something I could actually finish. Ended up with full marks on the analysis section."},
-         {who:"Priyanka D.", ctx:"GCSE Computer Science · parent", stars:5, text:"Practical, patient, and she gives real code to work through between sessions."}]},
-
-  {id:5, name:"Marcus Iwu", colour:"#8c4b2f", premium:1, hours:120, rating:4.6, reviews:29, buffer:0, photo:null,
-   uni:"University of Nottingham", course:"MSci Physics", year:"Second year", sat:2024,
-   grades:[{s:"Physics", g:"A*"},{s:"Maths", g:"A*"},{s:"Further Maths", g:"A"}],
-   headline:"Physics and Maths · Nottingham",
-   bio:"I sat OCR physics in 2024. I work through past papers question by question and set one short target a week rather than telling anyone to go and revise, which never meant anything to me either.",
-   subjects:[1,3,7], avail:{2:[9,14], 3:[9,14], 5:[14,19], 6:[9,13]}, blocked:[],
-   said:[{who:"Chloe A.", ctx:"GCSE Physics", stars:5, text:"Broke required practicals down into what the examiner wants written. Much less guessing."}]},
-
-  {id:6, name:"Hannah Whitlock", colour:"#a35a00", premium:4, hours:350, rating:4.8, reviews:82, buffer:15, photo:null,
-   uni:"University of Bath", course:"BSc Computer Science", year:"Final year", sat:2022,
-   grades:[{s:"Computer Science", g:"A*"},{s:"Maths", g:"A*"},{s:"Further Maths", g:"A*"}],
-   headline:"Computer Science and Maths · Bath",
-   bio:"Back from an industrial placement year at a fintech, so I can usually answer the question about where any of this gets used. I cover computer science at both levels plus GCSE maths, and I am calm about exams in a way I definitely was not at the time.",
-   subjects:[1,4,8], avail:{1:[13,19], 2:[13,19], 4:[13,19], 6:[10,15]}, blocked:[],
-   said:[{who:"Owen R.", ctx:"A-Level Computer Science", stars:5, text:"Went through Big-O and data structures until they genuinely clicked. Also just very calm about the whole exam thing."},
-         {who:"Beth S.", ctx:"GCSE Computer Science · parent", stars:4, text:"Good sessions and clear feedback. Would like slightly more availability at weekends."}]}
-];
+let TUTORS = [];   // filled from the server at startup
 
 const LENGTHS = [
   {mins:30, label:"30 min", mult:0.6, blocks:1},
   {mins:60, label:"60 min", mult:1, blocks:1},
   {mins:90, label:"90 min", mult:1.45, blocks:2}
 ];
-const LOGINS = { ["priya@" + DOMAIN]: {password:"demo1234", tutorId:1} };
+let CONFIG = { paymentsEnabled:false, brand:BRAND };
+
+/* ---------- talking to the server ---------- */
+async function api(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (opts.body) headers["Content-Type"] = "application/json";
+  if (state.token) headers.Authorization = "Bearer " + state.token;
+  const r = await fetch(API + path, { ...opts, headers,
+    body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || "Something went wrong. Please try again.");
+  return data;
+}
+
+// server record -> the shape the pages already render
+function adopt(t) {
+  const avail = {};
+  for (const [d, v] of Object.entries(t.availability || {})) avail[+d] = v;
+  return {
+    id: t.id, name: t.name, headline: t.headline || "", bio: t.bio || "",
+    uni: t.university, course: t.course, year: t.year, sat: t.sat,
+    grades: (t.grades || []).map(g => ({ s: g.subject, g: g.grade })),
+    subjects: t.subjectIds || [], premium: t.premium ?? 0, photo: t.photo || null,
+    avail, blocked: t.blocked || [], buffer: t.buffer ?? 15,
+    hours: t.hours || 0, rating: t.rating || null, reviews: t.reviews || 0,
+    said: t.said || [], colour: colourFor(t.name), busy: t.busy || []
+  };
+}
+function colourFor(name) {
+  const palette = ["#2743c4", "#0f766e", "#a35a00", "#4a3a86", "#b24020", "#1d5c8f"];
+  let n = 0;
+  for (const c of String(name)) n = (n * 31 + c.charCodeAt(0)) % 997;
+  return palette[n % palette.length];
+}
+
+async function loadTutors() {
+  const list = await api("/api/tutors");
+  TUTORS = list.map(adopt);
+  TAKEN.clear();
+  for (const t of TUTORS) for (const b of t.busy) {
+    const [day, hour] = b.split(":");
+    TAKEN.add(`${t.id}|${day}|${hour}`);
+  }
+}
 
 const state = {
   route:{name:"browse"}, level:"All", area:"All", query:"", tutorFilter:"All",
   dayIndex:0, slotHour:null, lengthMins:60,
-  step:null, name:"", email:"", rescheduleRef:null, signedIn:null, showPw:false,
+  step:null, name:"", email:"", rescheduleRef:null, signedIn:null, showPw:false, token:null,
   repeat:1, waitHour:null, noteRef:null,
   applyStep:"form", applyId:null, applyCode:null, applyPicked:[], applyErr:""
 };
 const WAITLIST = [];
-const API = (location.protocol === "http:" || location.protocol === "https:") ? "" : null;
+// same-origin requests, so the base is empty; ONLINE says whether a server is behind us at all
+const ONLINE = location.protocol === "http:" || location.protocol === "https:";
+const API = "";
 const BOOKINGS = [];
 const TAKEN = new Set();
 
@@ -513,12 +505,13 @@ function nextDays(n){
 const DAYS = nextDays(14);
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const key = (t,d,h) => `${t}|${d.toDateString()}|${h}`;
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const key = (t,d,h) => `${t}|${iso(d)}|${h}`;
 const initials = n => n.split(" ").map(w => w[0]).join("").slice(0,2);
 const money = n => "£" + n.toFixed(2).replace(/\.00$/,"");
 const fmtHour = h => String(h).padStart(2,"0") + ":00";
 const subject = id => SUBJECTS.find(s => s.id === id);
-const tutor = id => TUTORS.find(t => t.id === id);
+const tutor = id => TUTORS.find(t => String(t.id) === String(id));
 const tutorsFor = id => TUTORS.filter(t => t.subjects.includes(id));
 const fmtDate = d => `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 const stars = n => "★".repeat(n) + "☆".repeat(5-n);
@@ -560,13 +553,12 @@ function localLabel(date, hour){
 }
 
 /* availability */
-function isBlocked(t, date){ return t.blocked.includes(date.toDateString()); }
+function isBlocked(t, date){ return t.blocked.includes(iso(date)); }
 function hourFree(tutorId, date, hour){
   const t = tutor(tutorId), range = t.avail[date.getDay()];
   if(!range || isBlocked(t, date)) return false;
   if(hour < range[0] || hour >= range[1]) return false;
-  if(TAKEN.has(key(tutorId, date, hour))) return false;
-  return ((tutorId * 7 + date.getDate() * 3 + hour * 5) % 11) >= 3;
+  return !TAKEN.has(key(tutorId, date, hour));
 }
 function slotsFor(tutorId, date, mins){
   const t = tutor(tutorId), range = t.avail[date.getDay()];
@@ -610,6 +602,19 @@ function fromPrice(t){ return Math.min(...t.subjects.map(id => subject(id).price
 function hoursUntil(b){ return (ukInstant(b.date, b.hour) - Date.now()) / 36e5; }
 const makeRef = () => "AR-" + Math.random().toString(36).slice(2,7).toUpperCase();
 
+async function saveMe(patch, okMsg){
+  try {
+    const updated = await api("/api/me", {method:"PATCH", body:patch});
+    const i = TUTORS.findIndex(t => String(t.id) === String(state.signedIn));
+    if(i >= 0) TUTORS[i] = adopt(updated);
+    if(okMsg) toast(okMsg);
+  } catch (err) {
+    toast(err.message);
+    await loadTutors().catch(() => {});
+  }
+  render();
+}
+
 let toastTimer;
 function toast(msg){
   const el = document.getElementById("toast");
@@ -644,11 +649,12 @@ function parseRoute(){
   if(parts[0] === "tutors") return {name:"tutors"};
   if(parts[0] === "apply") return {name:"apply"};
   if(parts[0] === "profile" && parts[1]){
-    const t = tutor(+parts[1]);
+    const t = tutor(parts[1]);
     return t ? {name:"profile", tutorId:t.id, subjectId:t.subjects[0]} : {name:"tutors"};
   }
+  if(parts[0] === "manage" && parts[1]) return {name:"manage", manageToken:parts[1]};
   if(parts[0] === "book" && parts[2]){
-    const t = tutor(+parts[2]), s = subject(+parts[1]);
+    const t = tutor(parts[2]), s = subject(+parts[1]);
     return (t && s) ? {name:"book", subjectId:s.id, tutorId:t.id} : {name:"browse"};
   }
   if(parts[0] === "bookings") return {name:"bookings"};
@@ -688,10 +694,10 @@ function render(){
   page.classList.toggle("is-narrow", n === "login");
   ({browse:viewBrowse, subject:viewSubject, tutors:viewTutors, profile:viewProfile, book:viewBook,
     bookings:viewBookings, login:viewLogin, dash:viewDash, availability:viewAvailability,
-    edit:viewEdit, apply:viewApply}[n])();
+    edit:viewEdit, apply:viewApply, manage:viewManage}[n])();
   main.firstElementChild && main.firstElementChild.classList.add("rise");
   rails();
-  const tab = {browse:"browse", subject:"browse", book:"browse", tutors:"tutors", profile:"tutors", apply:"tutors", bookings:"bookings"}[n] || "";
+  const tab = {browse:"browse", subject:"browse", book:"browse", tutors:"tutors", profile:"tutors", apply:"tutors", bookings:"bookings", manage:"bookings"}[n] || "";
   document.querySelectorAll(".nav-link").forEach(b => b.classList.toggle("is-active", b.dataset.tab === tab));
   window.scrollTo({top:0, behavior:"instant"});
 }
@@ -781,6 +787,8 @@ function viewBrowse(){
     </div>` : ""}
 
     <div class="card">
+      ${!TUTORS.length ? `<div class="empty"><b>No tutors are taking bookings yet</b>
+        The first tutor account is being set up. Check back shortly.</div>` : ""}
       ${list.length ? list.map(s => `
         <button class="row" data-go="#/subject/${s.id}" style="--accent:${accent(s.area)}">
           <div class="tile">${s.icon}</div>
@@ -849,8 +857,9 @@ function viewTutors(){
     ${statementCard()}
 
     <div class="card">
-      <div class="card-head">${list.length} tutor${list.length===1?"":"s"}<span class="sub">Sorted by rating</span></div>
-      ${list.slice().sort((a,b) => b.rating - a.rating).map(t => tutorRow(t)).join("")}
+      <div class="card-head">${list.length} tutor${list.length===1?"":"s"}</div>
+      ${list.length ? list.slice().sort((a,b) => (b.rating||0) - (a.rating||0)).map(t => tutorRow(t)).join("")
+        : `<div class="empty"><b>No tutors listed yet</b>If you've just created your account, set your weekly hours and you'll appear here.</div>`}
     </div>
 
     <div class="card card-pad" style="text-align:center;">
@@ -884,8 +893,7 @@ function viewProfile(){
           <div class="uni" style="margin-top:4px;">${CAP}<span>${t.course}, ${t.uni}</span></div>
           <div class="detail-sub" style="font-size:13px;">${t.year} · sat A-Levels in ${t.sat}</div>
           <div class="row-note" style="margin-top:8px;">
-            <span class="badge badge-green">★ ${t.rating}</span>
-            <span>${t.reviews} reviews</span><span class="dot"></span>
+            ${t.rating ? `<span class="badge badge-green">★ ${t.rating}</span><span>${t.reviews} reviews</span><span class="dot"></span>` : ""}
             <span>${t.hours} hours tutored</span>
             ${t.buffer ? `<span class="dot"></span><span>${t.buffer} min gap between sessions</span>` : ""}
           </div>
@@ -969,8 +977,10 @@ function viewSubject(){
       </div>
     </div>
     <div class="card">
-      <div class="card-head">${tutorsFor(s.id).length} tutors teach this<span class="sub">Sorted by rating</span></div>
-      ${tutorsFor(s.id).slice().sort((a,b) => b.rating - a.rating).map(t => `
+      <div class="card-head">${tutorsFor(s.id).length} tutor${tutorsFor(s.id).length===1?"":"s"} teach${tutorsFor(s.id).length===1?"es":""} this</div>
+      ${tutorsFor(s.id).length ? "" : `<div class="empty"><b>Nobody is teaching this yet</b>
+        <button class="btn btn-outline" data-go="#/tutors" style="margin-top:12px;">See all tutors</button></div>`}
+      ${tutorsFor(s.id).slice().sort((a,b) => (b.rating||0) - (a.rating||0)).map(t => `
         <button class="row" data-go="#/book/${s.id}/${t.id}" style="--accent:${t.colour}">
           ${avatarHtml(t, "md")}
           <div class="row-body">
@@ -1095,6 +1105,19 @@ function viewBookings(){
     </div>`;
 }
 
+function viewManage(){
+  main.innerHTML = `<div class="card card-pad"><div class="empty">Loading your booking…</div></div>`;
+  api("/api/manage/" + encodeURIComponent(state.route.manageToken)).then(r => {
+    const list = r.bookings.map(b => ({...b, date:new Date(b.day + "T12:00:00")}));
+    BOOKINGS.length = 0; BOOKINGS.push(...list);
+    manageToken = state.route.manageToken;
+    if(state.route.name === "manage") viewBookings();
+  }).catch(err => {
+    main.innerHTML = `<div class="card"><div class="card-head">Booking</div>
+      <div class="empty"><b>${esc(err.message)}</b>Check the link in your confirmation email, or ask us to resend it.</div></div>`;
+  });
+}
+
 function viewLogin(){
   main.innerHTML = `
     <div class="card card-pad">
@@ -1127,6 +1150,13 @@ function staffTabs(active){
 
 function viewDash(){
   const t = tutor(state.signedIn);
+  if(!t) return go("#/staff");
+  api("/api/me/bookings").then(r => {
+    BOOKINGS.length = 0;
+    BOOKINGS.push(...r.bookings.map(b => ({...b, date:new Date(b.day + "T12:00:00")})));
+    WAITLIST.length = 0; WAITLIST.push(...r.waitlist.map(w => ({...w, date:w.day})));
+    if(state.route.name === "dash" && !dashLoaded){ dashLoaded = true; render(); }
+  }).catch(() => {});
   const mine = BOOKINGS.filter(b => b.tutorId === t.id && b.status === "confirmed");
   const openDays = DAYS.slice(0,7).filter(d => slotsFor(t.id, d, 60).some(s => s.free)).length;
   main.innerHTML = staffTabs("dash") + `
@@ -1298,7 +1328,7 @@ function readApplyForm(){
 }
 
 async function postApplication(payload){
-  if(!API){                                   // opened as a file, no server behind it
+  if(!ONLINE){                                // opened as a file, no server behind it
     state.applyId = "demo-" + Date.now();
     state.applyCode = String(Math.floor(100000 + Math.random()*900000));
     return {demo:true};
@@ -1311,7 +1341,7 @@ async function postApplication(payload){
   return j;
 }
 async function verifyApplication(code){
-  if(!API) return code === state.applyCode;
+  if(!ONLINE) return code === state.applyCode;
   const r = await fetch(`${API}/api/applications/${encodeURIComponent(state.applyId)}/verify`, {
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({code})});
   return r.ok;
@@ -1435,7 +1465,8 @@ const mBody = document.getElementById("modal-body");
 const mFoot = document.getElementById("modal-foot");
 const mTitle = document.getElementById("modal-title");
 let sentCode = null, holdTimer = null, holdLeft = 0, pendingCancel = null;
-let lastOrder = {made:[], skipped:[]}, lastFocus = null;
+let lastOrder = {made:[], skipped:[]}, lastFocus = null, manageToken = null;
+let dashLoaded = false;
 let otpTries = 0, otpExpires = 0, resendAt = 0;
 
 const FOCUSABLE = 'button:not([disabled]),input:not([disabled]),textarea,select,[href]';
@@ -1470,8 +1501,20 @@ function startHold(){
   }, 1000);
 }
 function sendCode(){
-  sentCode = String(Math.floor(100000 + Math.random()*900000));
-  otpTries = 0; otpExpires = Date.now() + 6e5; resendAt = Date.now() + 3e4;
+  otpTries = 0; otpExpires = Date.now() + 9e5; resendAt = Date.now() + 3e4;
+}
+let currentHold = null;
+
+// ask the server to hold the slot(s) and email the customer a code
+async function requestHold(){
+  const d = DAYS[state.dayIndex];
+  currentHold = await api("/api/holds", {method:"POST", body:{
+    tutorId: state.route.tutorId, subjectId: state.route.subjectId,
+    mins: state.lengthMins, day: iso(d), hour: state.slotHour,
+    repeat: state.repeat, name: state.name, email: state.email
+  }});
+  sendCode();
+  return currentHold;
 }
 function blockDiscount(n){ return n >= 4 ? 0.9 : 1; }
 function orderTotal(){
@@ -1510,7 +1553,11 @@ function drawModal(){
             `<button class="${state.repeat===n?"is-on":""}" data-repeat="${n}"><b>${a}</b>${b2}</button>`).join("")}
         </div>
         <div class="hint">Weeks where the tutor isn't free are skipped and never charged.</div></div>
-      <p style="font-size:12px;color:var(--ink-2);margin:0;">We'll send a 6-digit code to check this address before you pay.</p>`;
+      <p style="font-size:12px;color:var(--ink-2);margin:0;">
+        We'll email you a 6-digit code to check this address. ${CONFIG.paymentsEnabled
+          ? "You'll pay on the next step."
+          : "Your tutor will arrange payment with you directly before the first session \u2014 nothing is charged here."}
+      </p>`;
     mFoot.innerHTML = `<button class="btn btn-primary btn-block" id="next">Send code</button>`;
   }
   if(state.step === "otp"){
@@ -1520,11 +1567,11 @@ function drawModal(){
       <div class="otp">${[0,1,2,3,4,5].map(i => `<input inputmode="numeric" maxlength="1" data-otp="${i}" aria-label="Digit ${i+1}">`).join("")}</div>
       <div class="field" id="f-otp" style="text-align:center;margin-bottom:8px;"><div class="err" id="otp-err">That code isn't right.</div></div>
       <div style="text-align:center;"><button class="btn btn-outline btn-sm" id="resend" disabled>Resend code in 30s</button></div>
-      <div class="note"><b>Demo:</b> no email is sent. Your code is <b>${sentCode}</b>. Three wrong attempts locks the code, as it would in production.</div>`;
+      <div class="note">Can't find it? Check your spam folder. The code expires in 15 minutes.</div>`;
     mFoot.innerHTML = `<button class="btn btn-primary btn-block" id="next">Verify email</button>`;
     setTimeout(() => document.querySelector("[data-otp='0']")?.focus(), 30);
   }
-  if(state.step === "pay"){
+  if(state.step === "pay_unused"){
     mTitle.textContent = "Payment";
     mBody.innerHTML = recapHtml() + `
       <div class="stripe-slot">Stripe Elements mounts here.<br>No card fields exist in this draft, by design.</div>
@@ -1555,7 +1602,8 @@ function drawModal(){
           (${lastOrder.skipped.join(", ")}). You haven't been charged for ${lastOrder.skipped.length>1?"those":"that"}.</div>` : ""}
         <p style="color:var(--ink-2);font-size:13px;">Confirmation and joining link on the way to ${esc(b.email)}, with reminders 24 hours and 1 hour before.</p>
         <button class="btn btn-outline btn-sm" data-ics="${b.ref}">Add to calendar</button></div>
-      <div class="note"><b>Demo:</b> nothing was charged and no email was sent. The calendar file is real.</div>`;
+      ${manageToken ? `<div class="notebox" style="text-align:left;">Keep the confirmation email \u2014 it has your link
+        for moving or cancelling this booking.</div>` : ""}`;
     mFoot.innerHTML = `<button class="btn btn-outline" id="finish">Done</button><button class="btn btn-primary" id="seebookings">View booking</button>`;
   }
   if(state.step === "waitlist"){
@@ -1604,8 +1652,8 @@ function drawModal(){
 document.addEventListener("click", e => {
   const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note]");
   if(el){
-    if(el.dataset.signout !== undefined){ state.signedIn = null; toast("Signed out."); return go("#/"); }
-    if(el.dataset.go) return go(el.dataset.go);
+    if(el.dataset.signout !== undefined){ state.signedIn = null; state.token = null; toast("Signed out."); return go("#/"); }
+    if(el.dataset.go){ if(el.dataset.go.startsWith("#/staff")) dashLoaded = false; return go(el.dataset.go); }
     if(el.dataset.level){ state.level = el.dataset.level; return render(); }
     if(el.dataset.area){ state.area = el.dataset.area; return render(); }
     if(el.dataset.tfilter){ state.tutorFilter = el.dataset.tfilter; return render(); }
@@ -1637,14 +1685,14 @@ document.addEventListener("click", e => {
     if(el.dataset.avtoggle !== undefined){
       const t = tutor(state.signedIn), d = +el.dataset.avtoggle;
       if(t.avail[d]) delete t.avail[d]; else t.avail[d] = [9,17];
-      toast(`${DAY_FULL[d]} ${t.avail[d]?"opened":"closed"}.`);
-      return render();
+      render();
+      return saveMe({availability:t.avail}, `${DAY_FULL[d]} ${t.avail[d] ? "opened" : "closed"}.`);
     }
     if(el.dataset.block){
       const t = tutor(state.signedIn), k = el.dataset.block, i = t.blocked.indexOf(k);
       if(i < 0) t.blocked.push(k); else t.blocked.splice(i,1);
-      toast(i < 0 ? "Date blocked out." : "Date reopened.");
-      return render();
+      render();
+      return saveMe({blocked:t.blocked}, i < 0 ? "Date blocked out." : "Date reopened.");
     }
   }
 
@@ -1667,26 +1715,35 @@ document.addEventListener("click", e => {
   if(e.target.id === "seebookings"){ closeModal(); state.slotHour = null; return go("#/bookings"); }
   if(e.target.id === "confirm-cancel"){
     const b = BOOKINGS.find(x => x.ref === pendingCancel);
-    const free = hoursUntil(b) > 24;
-    b.status = "cancelled";
-    const blocks = LENGTHS.find(l => l.mins === b.mins).blocks;
-    for(let i=0;i<blocks;i++) TAKEN.delete(key(b.tutorId, b.date, b.hour+i));
-    closeModal();
-    toast(free ? `Cancelled. ${money(b.price)} refunded.` : "Cancelled. No refund under the 24-hour policy.");
-    return render();
+    if(!manageToken){ closeModal(); return toast("Open the link in your confirmation email to cancel."); }
+    e.target.disabled = true; e.target.textContent = "Cancelling…";
+    api(`/api/manage/${encodeURIComponent(manageToken)}/cancel`, {method:"POST"})
+      .then(r => {
+        b.status = "cancelled";
+        toast(r.refund ? `Cancelled. ${money(r.refund)} to be refunded.` : "Cancelled. No refund under the 24-hour policy.");
+        closeModal(); loadTutors().then(render).catch(() => render());
+      })
+      .catch(err => { closeModal(); toast(err.message); });
+    return;
   }
   if(e.target.id === "join-wait"){
     const email = document.getElementById("i-wait").value.trim();
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))
       return document.getElementById("f-wait").classList.add("has-err");
-    WAITLIST.push({tutorId:state.route.tutorId, date:DAYS[state.dayIndex].toDateString(), hour:state.waitHour, email});
-    state.email = email; closeModal();
-    return toast("Added to the waitlist. We'll email you if it frees up.");
+    state.email = email;
+    api("/api/waitlist", {method:"POST", body:{tutorId:state.route.tutorId,
+      day:iso(DAYS[state.dayIndex]), hour:state.waitHour, email}})
+      .then(() => toast("Added to the waitlist. We'll email you if it frees up."))
+      .catch(err => toast(err.message));
+    return closeModal();
   }
   if(e.target.id === "save-note"){
     const b = BOOKINGS.find(x => x.ref === state.noteRef);
     b.note = document.getElementById("i-note").value.trim() || null;
-    closeModal(); toast(b.note ? "Note saved and emailed to the student." : "Note removed.");
+    closeModal();
+    api(`/api/me/bookings/${b.ref}/note`, {method:"POST", body:{note:b.note}})
+      .then(() => toast(b.note ? "Note saved." : "Note removed."))
+      .catch(err => toast(err.message));
     return render();
   }
 
@@ -1738,23 +1795,43 @@ document.addEventListener("click", e => {
     return;
   }
 
-  if(e.target.id === "resend"){ sendCode(); toast("New code sent."); return drawModal(); }
+  if(e.target.id === "resend"){
+    e.target.disabled = true;
+    requestHold().then(() => { toast("New code sent."); drawModal(); }).catch(err => toast(err.message));
+    return;
+  }
   if(e.target.id === "pw-toggle"){ state.showPw = !state.showPw; return render(); }
   if(e.target.id === "forgot") return toast("Password reset email sent (not wired up in this draft).");
 
   if(e.target.id === "signin"){
     const email = document.getElementById("i-lemail").value.trim().toLowerCase();
     const pw = document.getElementById("i-lpw").value;
-    const acct = LOGINS[email], ok = acct && acct.password === pw;
-    document.getElementById("f-lemail").classList.toggle("has-err", !email);
-    document.getElementById("f-lpw").classList.toggle("has-err", !ok);
-    if(!ok) return;
-    state.signedIn = acct.tutorId;
-    toast("Signed in as " + tutor(acct.tutorId).name);
-    return go("#/staff/dashboard");
+    if(!email || !pw){
+      document.getElementById("f-lemail").classList.toggle("has-err", !email);
+      document.getElementById("f-lpw").classList.toggle("has-err", !pw);
+      return;
+    }
+    e.target.disabled = true; e.target.textContent = "Signing in…";
+    api("/api/login", {method:"POST", body:{email, password:pw}})
+      .then(async r => {
+        state.token = r.token;
+        await loadTutors();
+        if(!tutor(r.tutor.id)) TUTORS.push(adopt(r.tutor));
+        state.signedIn = r.tutor.id;
+        toast("Signed in as " + r.tutor.name);
+        go("#/staff/dashboard");
+      })
+      .catch(err => {
+        const b = document.getElementById("signin");
+        if(b){ b.disabled = false; b.textContent = "Sign in"; }
+        document.getElementById("f-lpw").classList.add("has-err");
+        document.querySelector("#f-lpw .err").textContent = err.message;
+      });
+    return;
   }
   if(e.target.id === "p-photo-clear"){
-    tutor(state.signedIn).photo = null; toast("Photo removed."); return render();
+    tutor(state.signedIn).photo = null; render();
+    return saveMe({photo:null}, "Photo removed.");
   }
   if(e.target.id === "savep"){
     const t = tutor(state.signedIn);
@@ -1763,8 +1840,9 @@ document.addEventListener("click", e => {
     t.uni = document.getElementById("p-uni").value.trim() || t.uni;
     t.course = document.getElementById("p-course").value.trim() || t.course;
     t.premium = Math.max(0, Math.min(30, +document.getElementById("p-premium").value || 0));
-    toast("Profile saved. Your public page and prices are updated.");
-    return render();
+    e.target.disabled = true; e.target.textContent = "Saving…";
+    return saveMe({headline:t.headline, bio:t.bio, university:t.uni, course:t.course, premium:t.premium},
+      "Profile saved. Your public page and prices are updated.");
   }
 
   if(e.target.id === "next"){
@@ -1776,42 +1854,40 @@ document.addEventListener("click", e => {
       document.getElementById("f-email").classList.toggle("has-err", !okMail);
       if(!okName || !okMail) return;
       state.name = name; state.email = email;
-      sendCode(); state.step = "otp"; return drawModal();
+      e.target.disabled = true; e.target.textContent = "Sending code…";
+      requestHold()
+        .then(() => { state.step = "otp"; drawModal(); })
+        .catch(err => { closeModal(); toast(err.message); loadTutors().then(render); });
+      return;
     }
     if(state.step === "otp"){
       const typed = [...document.querySelectorAll("[data-otp]")].map(i => i.value).join("");
       const errEl = document.getElementById("otp-err");
-      if(Date.now() > otpExpires){
-        errEl.textContent = "That code has expired. Request a new one.";
+      if(typed.length !== 6){
+        errEl.textContent = "Enter all six digits.";
         return document.getElementById("f-otp").classList.add("has-err");
       }
-      if(typed !== sentCode){
-        otpTries++;
-        errEl.textContent = otpTries >= 3
-          ? (sentCode = null, "Too many attempts. Request a new code.")
-          : `That code isn't right. ${3-otpTries} attempt${otpTries===2?"":"s"} left.`;
-        return document.getElementById("f-otp").classList.add("has-err");
-      }
-      state.step = "pay"; return drawModal();
+      e.target.disabled = true; e.target.textContent = "Checking…";
+      api("/api/holds/confirm", {method:"POST", body:{holdId:currentHold.holdId, code:typed}})
+        .then(async r => {
+          lastOrder = {
+            made: r.bookings.map(b => ({...b, date:new Date(b.day + "T12:00:00")})),
+            skipped: (r.skipped || []).map(d => fmtDate(new Date(d + "T12:00:00")))
+          };
+          manageToken = r.manageToken;
+          BOOKINGS.length = 0; BOOKINGS.push(...lastOrder.made);
+          await loadTutors().catch(() => {});
+          state.step = "done"; rails(); drawModal();
+        })
+        .catch(err => {
+          const btn = document.getElementById("next");
+          if(btn){ btn.disabled = false; btn.textContent = "Verify email"; }
+          errEl.textContent = err.message;
+          document.getElementById("f-otp").classList.add("has-err");
+        });
+      return;
     }
-    if(state.step === "pay"){
-      const t = state.route.tutorId, sj = state.route.subjectId;
-      const blocks = LENGTHS.find(l => l.mins === state.lengthMins).blocks;
-      const per = Math.round(priceFor(t, sj, state.lengthMins) * blockDiscount(state.repeat) * 100) / 100;
-      lastOrder = {made:[], skipped:[]};
-      for(let w = 0; w < state.repeat; w++){
-        const d = addDays(DAYS[state.dayIndex], w * 7);
-        let free = true;
-        for(let i=0;i<blocks;i++) if(!hourFree(t, d, state.slotHour + i)) free = false;
-        if(!free){ lastOrder.skipped.push(fmtDate(d)); continue; }
-        const b = {ref:makeRef(), tutorId:t, subjectId:sj, date:d, hour:state.slotHour,
-          mins:state.lengthMins, price:per, name:state.name, email:state.email,
-          status:"confirmed", note:null, series:state.repeat > 1};
-        for(let i=0;i<blocks;i++) TAKEN.add(key(t, d, b.hour+i));
-        BOOKINGS.push(b); lastOrder.made.push(b);
-      }
-      state.step = "done"; rails(); return drawModal();
-    }
+
   }
 });
 
@@ -1823,7 +1899,7 @@ document.addEventListener("change", e => {
     if(!f) return;
     if(f.size > 3 * 1024 * 1024) return toast("That image is over 3 MB. Try a smaller one.");
     const reader = new FileReader();
-    reader.onload = () => { t.photo = reader.result; toast("Photo updated."); render(); };
+    reader.onload = () => { t.photo = reader.result; render(); saveMe({photo:t.photo}, "Photo updated."); };
     reader.onerror = () => toast("Couldn't read that file.");
     reader.readAsDataURL(f);
     return;
@@ -1836,10 +1912,10 @@ document.addEventListener("change", e => {
     let e1 = isStart ? e0 : +e.target.value;
     if(e1 <= s1) e1 = s1 + 1;
     t.avail[d] = [s1, e1];
-    toast(`${DAY_FULL[d]} set to ${fmtHour(s1)}–${fmtHour(e1)}.`);
-    return render();
+    render();
+    return saveMe({availability:t.avail}, `${DAY_FULL[d]} set to ${fmtHour(s1)}–${fmtHour(e1)}.`);
   }
-  if(e.target.id === "buffer"){ t.buffer = +e.target.value; toast("Buffer updated."); return render(); }
+  if(e.target.id === "buffer"){ t.buffer = +e.target.value; return saveMe({buffer:t.buffer}, "Buffer updated."); }
 });
 
 document.addEventListener("input", e => {
@@ -1868,7 +1944,30 @@ document.getElementById("q").addEventListener("input", e => {
 });
 
 overlay.addEventListener("click", e => { if(e.target === overlay) closeModal(); });
-route();
+
+/* ---------- start up ---------- */
+main.innerHTML = `<div class="card card-pad"><div class="empty">Loading…</div></div>`;
+(async () => {
+  if(!ONLINE){
+    main.innerHTML = `<div class="card"><div class="card-head">Not running on the server</div>
+      <div class="empty"><b>Open this page through the server, not as a file</b>
+      Start it with <code>node server.js</code>, then visit http://localhost:3000.</div></div>`;
+    return;
+  }
+  try {
+    const cfg = await api("/api/config");
+    CONFIG = cfg;
+    if(Array.isArray(cfg.subjects) && cfg.subjects.length){
+      SUBJECTS.length = 0; SUBJECTS.push(...cfg.subjects);
+    }
+    await loadTutors();
+  } catch (err) {
+    main.innerHTML = `<div class="card"><div class="card-head">Can't reach the server</div>
+      <div class="empty"><b>${esc(err.message)}</b>Check the terminal window running the site is still open, then reload.</div></div>`;
+    return;
+  }
+  route();
+})();
 </script>
 </body>
 </html>
