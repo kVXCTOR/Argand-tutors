@@ -763,6 +763,44 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+/* ---------------- one-shot email test ----------------
+   node server.js --test-email
+   Sends a single message to OWNER_EMAIL and says plainly what happened. */
+if (process.argv.includes("--test-email")) {
+  const provider = BREVO_API_KEY ? "Brevo" : RESEND_API_KEY ? "Resend" : null;
+  console.log("\n" + BRAND + " — email test\n");
+  if (!provider) {
+    console.log("  No email key is set, so there is nothing to test.");
+    console.log("  Set BREVO_API_KEY (or RESEND_API_KEY) and run this again.");
+    console.log("  Without one, codes print to this window instead of being sent.\n");
+    process.exit(0);
+  }
+  console.log("  Provider: " + provider);
+  console.log("  Sending to: " + OWNER_EMAIL);
+  if (BREVO_API_KEY) console.log("  Sending from: " + (process.env.BREVO_SENDER || OWNER_EMAIL));
+  sendEmail(OWNER_EMAIL, BRAND + " — test email", wrap(
+    `<h2 style="font-size:19px;margin:0 0 12px">Email is working</h2>
+     <p>If you're reading this, ${esc(BRAND)} can send mail. Verification codes and booking
+     confirmations will now reach real inboxes instead of printing to your terminal.</p>
+     <p style="font-size:13px;color:#555">Sent ${new Date().toLocaleString("en-GB")}.</p>`))
+    .then(() => {
+      console.log("\n  Sent. Check " + OWNER_EMAIL + " — including the spam folder.");
+      console.log("  If it doesn't arrive within a few minutes, the address you're");
+      console.log("  sending FROM probably isn't verified with " + provider + ".\n");
+      process.exit(0);
+    })
+    .catch(err => {
+      console.log("\n  FAILED: " + err.message + "\n");
+      console.log("  Most common causes:");
+      console.log("    - the API key is wrong, or has a space or quote stuck to it");
+      console.log("    - the sending address isn't verified with " + provider);
+      if (RESEND_API_KEY && !BREVO_API_KEY)
+        console.log("    - Resend only delivers to your own address until a domain is verified\n");
+      else console.log("");
+      process.exit(1);
+    });
+} else
+
 server.listen(PORT, () => {
   console.log(`\nArgand Tutors running at ${PUBLIC_URL}`);
   console.log(`Owner email:  ${OWNER_EMAIL}`);

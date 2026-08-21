@@ -118,7 +118,7 @@ select{font-family:inherit;font-size:13px;}
 .statement b{color:var(--ink);font-weight:600;}
 
 .banner{height:56px;background:linear-gradient(120deg,#182b8c,#4f6ae0);}
-.avatar{border-radius:50%;display:grid;place-items:center;font-weight:600;color:#fff;flex:none;background:#5f6b7a;overflow:hidden;position:relative;}
+.avatar{border-radius:50%;display:grid;place-items:center;font-weight:600;color:#fff;flex:0 0 auto;align-self:flex-start;aspect-ratio:1/1;background:#5f6b7a;overflow:hidden;position:relative;}
 .avatar img{width:100%;height:100%;object-fit:cover;display:block;}
 .avatar-xl{width:88px;height:88px;font-size:30px;}
 .avatar-lg{width:64px;height:64px;font-size:22px;}
@@ -196,7 +196,8 @@ button.row:hover::before{opacity:1;}
 .crumb button:hover{text-decoration:underline;}
 
 .detail-head{display:flex;gap:16px;padding:16px;flex-wrap:wrap;}
-.detail-head > div{min-width:0;flex:1 1 240px;}
+.detail-head > div:not(.avatar){min-width:0;flex:1 1 240px;}
+.detail-head > .avatar{flex:0 0 auto;}
 .detail-title{font-size:22px;font-weight:600;line-height:1.25;letter-spacing:-.2px;}
 .detail-sub{color:var(--ink-2);margin-top:2px;}
 .qual{display:flex;gap:8px;padding:6px 0;font-size:13px;color:var(--ink-2);align-items:flex-start;}
@@ -359,12 +360,11 @@ button.row:hover::before{opacity:1;}
     </div>
     <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
       <b style="color:var(--ink);display:block;margin-bottom:6px;">How booking works</b>
-      Pick a tutor or a subject, choose a time, confirm your email and pay. Your booking details are
-      emailed to you straight away, with a link to cancel if you need it.
+      <span id="rail-how">Pick a tutor or a subject, choose a time and confirm your email.</span>
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Cancellation</b>
-      Free to cancel up to 24 hours before a session, using the link in your confirmation email, and
-      we refund automatically. Inside 24 hours the session is charged in full.
+      <span id="rail-cancel">Free to cancel up to 24 hours before a session, using the link in your
+      confirmation email. Inside 24 hours the session is charged in full.</span>
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Why Argand</b>
       The Argand diagram plots real against imaginary. We plot four subjects against the people who sat them most recently.
@@ -2027,6 +2027,14 @@ main.innerHTML = `<div class="card card-pad"><div class="empty">Loading…</div>
   try {
     const cfg = await api("/api/config");
     CONFIG = cfg;
+    const how = document.getElementById("rail-how");
+    const canc = document.getElementById("rail-cancel");
+    if(how) how.textContent = CONFIG.paymentsEnabled
+      ? "Pick a tutor or a subject, choose a time, confirm your email and pay by card. Your booking details are emailed straight away, with a link to cancel."
+      : "Pick a tutor or a subject, choose a time and confirm your email. Your tutor arranges payment with you directly, and your booking details are emailed straight away.";
+    if(canc) canc.textContent = CONFIG.paymentsEnabled
+      ? "Free to cancel up to 24 hours before a session, using the link in your confirmation email — we refund your card automatically. Inside 24 hours the session is charged in full."
+      : "Free to cancel up to 24 hours before a session, using the link in your confirmation email. Inside 24 hours the session is charged in full.";
     if(Array.isArray(cfg.subjects) && cfg.subjects.length){
       SUBJECTS.length = 0; SUBJECTS.push(...cfg.subjects);
     }
