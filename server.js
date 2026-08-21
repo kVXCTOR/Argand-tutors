@@ -9,9 +9,19 @@ const path = require("path");
 const crypto = require("crypto");
 
 const PORT = process.env.PORT || 3000;
-const OWNER_EMAIL = process.env.OWNER_EMAIL || "";
-const FROM_EMAIL = process.env.FROM_EMAIL || "Argand Tutors <noreply@argandtutors.co.uk>";
+// Where tutor applications and approval codes are sent.
+// Override with an OWNER_EMAIL environment variable when you deploy.
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "victorkolawole2008@gmail.com";
+// onboarding@resend.dev works straight away with no domain setup.
+// Swap to noreply@yourdomain once you have verified the domain with Resend.
+const FROM_EMAIL = process.env.FROM_EMAIL || "Argand Tutors <onboarding@resend.dev>";
 const RESEND_API_KEY = process.env.RESEND_API_KEY || null;
+const BREVO_API_KEY = process.env.BREVO_API_KEY || null;
+
+// Card payments switch themselves on as soon as a Stripe key is present.
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || null;
+const STRIPE_API_BASE = process.env.STRIPE_API_BASE || "https://api.stripe.com";
+const CURRENCY = process.env.CURRENCY || "gbp";
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "data.json");
 
@@ -53,6 +63,21 @@ function rateLimit(ip, bucket, max, windowMs) {
 
 /* ---------------- email ---------------- */
 async function sendEmail(to, subject, html) {
+  if (BREVO_API_KEY) {
+    // Brevo works without owning a domain — handy before you buy one.
+    const sender = process.env.BREVO_SENDER || OWNER_EMAIL;
+    const res = await fetch((process.env.BREVO_API_BASE || "https://api.brevo.com") + "/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": BREVO_API_KEY, "Content-Type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sender: { name: BRAND, email: sender },
+        to: [{ email: to }],
+        subject, htmlContent: html
+      })
+    });
+    if (!res.ok) throw new Error("Brevo rejected the message: " + await res.text());
+    return res.json();
+  }
   if (!RESEND_API_KEY) {
     console.log("\n──────── EMAIL (no RESEND_API_KEY set, printing instead) ────────");
     console.log("To:     ", to);
@@ -281,7 +306,7 @@ const subjectById = id => SUBJECTS.find(s => s.id === Number(id));
 
 // Card payments stay off until Stripe is wired in. Bookings are still real sessions;
 // you invoice separately. Better than a "Pay now" button on a live site that takes nothing.
-const PAYMENTS_ENABLED = false;
+const PAYMENTS_ENABLED = !!STRIPE_SECRET_KEY;
 const BRAND = process.env.BRAND || "Argand Tutors";
 
 const clean = (v, max = 500) => String(v ?? "").trim().slice(0, max);
@@ -362,6 +387,87 @@ async function updateMe(req, res, t) {
   json(res, 200, publicTutor(t));
 }
 
+/* ---------- Stripe ---------- */
+// Form-encodes nested objects the way Stripe's API expects: a[b][c]=v
+function formEncode(obj, prefix = "", out = []) {
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}[${k}]` : k;
+    if (v === undefined || v === null) continue;
+    if (typeof v === "object") formEncode(v, key, out);
+    else out.push(encodeURIComponent(key) + "=" + encodeURIComponent(v));
+  }
+  return out;
+}
+async function stripe(path, body, method = "POST") {
+  const res = await fetch(STRIPE_API_BASE + "/v1/" + path, {
+    method,
+    headers: {
+      Authorization: "Bearer " + STRIPE_SECRET_KEY,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: body ? formEncode(body).join("&") : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || "Payment provider error");
+  return data;
+}
+
+async function createCheckout(req, res, holdId) {
+  const hold = db.holds.find(h => h.id === holdId);
+  if (!hold) return json(res, 404, { error: "That booking attempt has expired. Please start again." });
+  if (!hold.verified) return json(res, 403, { error: "Confirm your email address first." });
+  if (hold.expires < Date.now()) return json(res, 410, { error: "Your held slot expired. Please start again." });
+
+  const t = db.tutors.find(x => x.id === hold.tutorId), sj = subjectById(hold.subjectId);
+  const n = hold.days.length;
+  try {
+    const session = await stripe("checkout/sessions", {
+      mode: "payment",
+      customer_email: hold.email,
+      success_url: `${PUBLIC_URL}/#/paid/${hold.id}/{CHECKOUT_SESSION_ID}`,
+      cancel_url: `${PUBLIC_URL}/#/profile/${t.id}`,
+      metadata: { holdId: hold.id },
+      line_items: {
+        0: {
+          quantity: n,
+          price_data: {
+            currency: CURRENCY,
+            unit_amount: Math.round(hold.perSession * 100),
+            product_data: {
+              name: `${sj.name} with ${t.name}`,
+              description: `${hold.mins}-minute session${n > 1 ? "s" : ""}, ${hold.days.join(", ")}`
+            }
+          }
+        }
+      }
+    });
+    hold.checkoutSessionId = session.id;
+    save(db);
+    json(res, 200, { url: session.url });
+  } catch (err) {
+    console.error("Stripe checkout failed:", err.message);
+    json(res, 502, { error: "We couldn't start the payment. Nothing has been charged — please try again." });
+  }
+}
+
+// Called when Stripe sends the customer back. We ask Stripe directly whether the
+// session was paid rather than trusting anything the browser hands us.
+async function completeCheckout(req, res, holdId, sessionId) {
+  const hold = db.holds.find(h => h.id === holdId);
+  if (!hold) {
+    const already = db.bookings.filter(b => b.checkoutSessionId === sessionId && b.status === "confirmed");
+    if (already.length) return json(res, 200, { bookings: already.map(b => ({ ...b, manageToken: undefined })),
+      manageToken: already[0].manageToken, skipped: [], alreadyDone: true });
+    return json(res, 404, { error: "That booking attempt has expired. If you were charged, contact us and we'll sort it." });
+  }
+  let session;
+  try { session = await stripe("checkout/sessions/" + encodeURIComponent(sessionId), null, "GET"); }
+  catch (err) { return json(res, 502, { error: "We couldn't confirm the payment yet. Please refresh in a moment." }); }
+  if (session.payment_status !== "paid") return json(res, 402, { error: "That payment hasn't completed." });
+
+  return finaliseBooking(res, hold, { paid: true, sessionId, paymentIntent: session.payment_intent });
+}
+
 /* ---------- booking: hold the slot, verify the email, then confirm ---------- */
 async function createHold(req, res, ip) {
   if (!rateLimit(ip, "hold", 30, 36e5)) return json(res, 429, { error: "Too many booking attempts. Try again later." });
@@ -412,6 +518,14 @@ async function confirmHold(req, res) {
     hold.attempts++; save(db);
     return json(res, 401, { error: "That code isn't right.", attemptsLeft: 5 - hold.attempts });
   }
+  if (PAYMENTS_ENABLED) {
+    hold.verified = true; save(db);
+    return json(res, 200, { needsPayment: true, holdId: hold.id, total: hold.total });
+  }
+  return finaliseBooking(res, hold, { paid: false });
+}
+
+function finaliseBooking(res, hold, pay) {
   const t = db.tutors.find(x => x.id === hold.tutorId), sj = subjectById(hold.subjectId);
   db.holds = db.holds.filter(h => h.id !== hold.id);
   const made = [];
@@ -422,7 +536,9 @@ async function confirmHold(req, res) {
       manageToken: crypto.randomBytes(20).toString("hex"),
       tutorId: t.id, subjectId: sj.id, day: iso, hour: hold.hour, mins: hold.mins,
       price: hold.perSession, name: hold.name, email: hold.email,
-      status: "confirmed", note: null, paid: false, createdAt: new Date().toISOString()
+      status: "confirmed", note: null,
+      paid: !!pay.paid, checkoutSessionId: pay.sessionId || null, paymentIntent: pay.paymentIntent || null,
+      remind24: false, remind1: false, createdAt: new Date().toISOString()
     });
   }
   if (!made.length) { save(db); return json(res, 409, { error: "That time was taken while you were confirming. Nothing has been booked." }); }
@@ -435,7 +551,9 @@ async function confirmHold(req, res) {
     `<h2 style="font-size:19px;margin:0 0 12px">You're booked in</h2>
      <p>${esc(sj.name)} with ${esc(t.name)}${made.length > 1 ? ", " + made.length + " weekly sessions starting" : ","} ${when(f)}.</p>
      <p>Reference <b>${f.ref}</b> \u00b7 ${hold.mins} minutes \u00b7 ${money(f.price)}${made.length > 1 ? " per session" : ""}</p>
-     ${PAYMENTS_ENABLED ? "" : `<p style="font-size:13px;color:#555">${esc(t.name.split(" ")[0])} will arrange payment with you directly before the first session.</p>`}
+     ${pay.paid
+       ? `<p style="font-size:13px;color:#555">Paid by card \u2014 ${money(hold.total)} in total. Your card statement will show ${esc(BRAND)}.</p>`
+       : `<p style="font-size:13px;color:#555">${esc(t.name.split(" ")[0])} will arrange payment with you directly before the first session.</p>`}
      <p><a href="${PUBLIC_URL}/#/manage/${f.manageToken}">Manage or cancel this booking</a></p>
      <p style="font-size:13px;color:#555">Free to move or cancel up to 24 hours before.</p>`)
   ).catch(e => console.error(e.message));
@@ -464,6 +582,24 @@ async function cancelBooking(req, res, token) {
   const free = (start - Date.now()) / 36e5 > 24;
   b.status = "cancelled"; b.cancelledAt = new Date().toISOString(); b.refundDue = free ? b.price : 0;
   save(db);
+
+  if (free && b.paid && b.paymentIntent && PAYMENTS_ENABLED) {
+    try {
+      await stripe("refunds", { payment_intent: b.paymentIntent, amount: Math.round(b.price * 100) });
+      b.refunded = true; save(db);
+    } catch (err) {
+      console.error("Refund failed for " + b.ref + ":", err.message);
+      b.refundError = err.message; save(db);
+    }
+  }
+
+  sendEmail(b.email, "Cancelled \u2014 " + subjectById(b.subjectId).name + ", " + b.day, wrap(
+    `<p>Your ${b.day} session at ${String(b.hour).padStart(2, "0")}:00 has been cancelled.</p>
+     <p>${free
+        ? (b.paid ? `A refund of ${money(b.price)} is on its way back to your card. Card refunds usually take 5\u201310 working days.`
+                  : `Nothing is owed for this session.`)
+        : `This was inside the 24-hour window, so under the cancellation policy the session is still chargeable.`}</p>`)
+  ).catch(e => console.error(e.message));
   const t = db.tutors.find(x => x.id === b.tutorId);
   const waiting = db.waitlist.filter(w => w.tutorId === b.tutorId && w.day === b.day && w.hour === b.hour);
   if (waiting.length) {
@@ -566,6 +702,7 @@ const server = http.createServer(async (req, res) => {
   const ip = (req.headers["x-forwarded-for"] || req.socket.remoteAddress || "?").split(",")[0].trim();
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const p = url.pathname;
+  let mm2;
 
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
@@ -579,6 +716,10 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { brand: BRAND, subjects: SUBJECTS, lengths: LENGTHS, paymentsEnabled: PAYMENTS_ENABLED });
     if (p === "/api/holds" && req.method === "POST") return await createHold(req, res, ip);
     if (p === "/api/holds/confirm" && req.method === "POST") return await confirmHold(req, res);
+    if ((mm2 = p.match(/^\/api\/holds\/([^/]+)\/checkout$/)) && req.method === "POST")
+      return await createCheckout(req, res, mm2[1]);
+    if ((mm2 = p.match(/^\/api\/holds\/([^/]+)\/complete\/([^/]+)$/)) && req.method === "POST")
+      return await completeCheckout(req, res, mm2[1], mm2[2]);
     if (p === "/api/waitlist" && req.method === "POST") return await joinWaitlist(req, res, ip);
     if (p === "/api/me" || p === "/api/me/bookings") {
       const me = currentTutor(req);
@@ -625,8 +766,8 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`\nArgand Tutors running at ${PUBLIC_URL}`);
   console.log(`Owner email:  ${OWNER_EMAIL}`);
-  console.log(`Sending mail: ${RESEND_API_KEY ? "yes, via Resend" : "no — codes will be printed to this console"}`);
-  console.log(`Card payments: ${PAYMENTS_ENABLED ? "on" : "off \u2014 bookings are taken, you invoice separately"}`);
+  console.log(`Sending mail: ${BREVO_API_KEY ? "yes, via Brevo" : RESEND_API_KEY ? "yes, via Resend" : "no — codes will be printed to this console"}`);
+  console.log(`Card payments: ${PAYMENTS_ENABLED ? "on, via Stripe" + (STRIPE_SECRET_KEY.startsWith("sk_test") ? " (TEST MODE \u2014 no real money)" : " (LIVE)") : "off \u2014 bookings are taken, you invoice separately"}`);
   console.log(`Data file:    ${DB_PATH}`);
   HOME = findHomePage();
   if (HOME.warning) {
@@ -635,6 +776,38 @@ server.listen(PORT, () => {
     console.log(`Home page:    ${HOME.file}\n`);
   }
 });
+
+// Reminders: one a day before, one an hour before. Flags on the booking stop
+// anything being sent twice, even if the server restarts.
+async function sendReminders() {
+  const now = Date.now();
+  for (const b of db.bookings) {
+    if (b.status !== "confirmed") continue;
+    const start = new Date(`${b.day}T${String(b.hour).padStart(2, "0")}:00:00Z`).getTime();
+    const hrs = (start - now) / 36e5;
+    const t = db.tutors.find(x => x.id === b.tutorId);
+    const sj = subjectById(b.subjectId);
+    if (!t || !sj) continue;
+    const when = `${b.day} at ${String(b.hour).padStart(2, "0")}:00`;
+
+    if (!b.remind24 && hrs <= 24 && hrs > 1) {
+      b.remind24 = true; save(db);
+      sendEmail(b.email, `Tomorrow: ${sj.name} with ${t.name}`, wrap(
+        `<p>A reminder that your session is ${when} (${b.mins} minutes).</p>
+         <p style="font-size:13px;color:#555">Need to change it? This is the last point you can cancel free of charge \\u2014
+         <a href="${PUBLIC_URL}/#/manage/${b.manageToken}">manage your booking</a>.</p>`)).catch(() => {});
+      sendEmail(t.email, `Tomorrow: ${sj.name} with ${b.name}`, wrap(
+        `<p>${esc(b.name)}, ${when}, ${b.mins} minutes.</p>`)).catch(() => {});
+    }
+    if (!b.remind1 && hrs <= 1 && hrs > -0.5) {
+      b.remind1 = true; save(db);
+      sendEmail(b.email, `Starting soon: ${sj.name}`, wrap(
+        `<p>Your session with ${esc(t.name)} starts at ${String(b.hour).padStart(2, "0")}:00.</p>`)).catch(() => {});
+    }
+  }
+}
+setInterval(sendReminders, 5 * 60 * 1000).unref();
+setTimeout(sendReminders, Number(process.env.REMINDER_START_MS) || 10000).unref();
 
 setInterval(() => {
   const before = db.holds.length;

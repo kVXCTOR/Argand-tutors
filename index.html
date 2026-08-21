@@ -359,12 +359,12 @@ button.row:hover::before{opacity:1;}
     </div>
     <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
       <b style="color:var(--ink);display:block;margin-bottom:6px;">How booking works</b>
-      Pick a tutor or a subject, choose a time and confirm your email. Your tutor arranges payment with you
-      directly, and your booking details are emailed straight away.
+      Pick a tutor or a subject, choose a time, confirm your email and pay. Your booking details are
+      emailed to you straight away, with a link to cancel if you need it.
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Cancellation</b>
-      Free to cancel up to 24 hours before a session, using the link in your confirmation email.
-      Inside 24 hours the session is charged in full.
+      Free to cancel up to 24 hours before a session, using the link in your confirmation email, and
+      we refund automatically. Inside 24 hours the session is charged in full.
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Why Argand</b>
       The Argand diagram plots real against imaginary. We plot four subjects against the people who sat them most recently.
@@ -663,6 +663,7 @@ function parseRoute(){
     return t ? {name:"profile", tutorId:t.id, subjectId:t.subjects[0]} : {name:"tutors"};
   }
   if(parts[0] === "manage" && parts[1]) return {name:"manage", manageToken:parts[1]};
+  if(parts[0] === "paid" && parts[2]) return {name:"paid", holdId:parts[1], sessionId:parts[2]};
   if(parts[0] === "book" && parts[2]){
     const t = tutor(parts[2]), s = subject(+parts[1]);
     return (t && s) ? {name:"book", subjectId:s.id, tutorId:t.id} : {name:"browse"};
@@ -704,10 +705,10 @@ function render(){
   page.classList.toggle("is-narrow", n === "login");
   ({browse:viewBrowse, subject:viewSubject, tutors:viewTutors, profile:viewProfile, book:viewBook,
     bookings:viewBookings, login:viewLogin, dash:viewDash, availability:viewAvailability,
-    edit:viewEdit, apply:viewApply, manage:viewManage}[n])();
+    edit:viewEdit, apply:viewApply, manage:viewManage, paid:viewPaid}[n])();
   main.firstElementChild && main.firstElementChild.classList.add("rise");
   rails();
-  const tab = {browse:"browse", subject:"browse", book:"browse", tutors:"tutors", profile:"tutors", apply:"tutors", bookings:"bookings", manage:"bookings"}[n] || "";
+  const tab = {browse:"browse", subject:"browse", book:"browse", tutors:"tutors", profile:"tutors", apply:"tutors", bookings:"bookings", manage:"bookings", paid:"bookings"}[n] || "";
   document.querySelectorAll(".nav-link").forEach(b => b.classList.toggle("is-active", b.dataset.tab === tab));
   window.scrollTo({top:0, behavior:"instant"});
 }
@@ -1119,6 +1120,44 @@ function viewBookings(){
     <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
       Loaded from the private link in your confirmation email. Keep that email — it's how you get back here.
     </div>`;
+}
+
+function viewPaid(){
+  main.innerHTML = `<div class="card card-pad"><div class="empty">
+    <b>Confirming your payment\u2026</b>Don't close this page.</div></div>`;
+  api(`/api/holds/${encodeURIComponent(state.route.holdId)}/complete/${encodeURIComponent(state.route.sessionId)}`,
+      {method:"POST"})
+    .then(async r => {
+      lastOrder = {
+        made: r.bookings.map(b => ({...b, date:new Date(b.day + "T12:00:00")})),
+        skipped: (r.skipped || []).map(d => fmtDate(new Date(d + "T12:00:00")))
+      };
+      manageToken = r.manageToken;
+      BOOKINGS.length = 0; BOOKINGS.push(...lastOrder.made);
+      await loadTutors().catch(() => {});
+      const b = lastOrder.made[0];
+      main.innerHTML = `<div class="card card-pad">
+        <div class="done"><div class="tick">\u2713</div>
+          <div style="font-size:20px;font-weight:600;">Payment received</div>
+          <p style="color:var(--ink-2);">${subject(b.subjectId).name} with ${tutor(b.tutorId).name},
+            ${lastOrder.made.length > 1 ? `${lastOrder.made.length} weekly sessions from` : ""}
+            ${fmtDate(b.date)} at ${fmtHour(b.hour)}.</p>
+          <p style="color:var(--ink-2);font-size:13px;">Reference <b class="ref" style="color:var(--ink);">${b.ref}</b>.
+            A receipt and your booking details are on the way to ${esc(b.email)}.</p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:8px;">
+            <button class="btn btn-outline btn-sm" data-ics="${b.ref}">Add to calendar</button>
+            <button class="btn btn-primary btn-sm" data-go="#/bookings">View booking</button>
+          </div>
+        </div></div>`;
+      rails();
+    })
+    .catch(err => {
+      main.innerHTML = `<div class="card"><div class="card-head">We couldn't confirm that payment</div>
+        <div class="empty"><b>${esc(err.message)}</b>
+          If money left your account, don't book again — contact us with the time you tried and we'll fix it.
+          <div style="margin-top:16px;"><button class="btn btn-outline" data-go="#/tutors">Back to tutors</button></div>
+        </div></div>`;
+    });
 }
 
 function viewManage(){
@@ -1573,7 +1612,7 @@ function drawModal(){
         <div class="hint">Weeks where the tutor isn't free are skipped and never charged.</div></div>
       <p style="font-size:12px;color:var(--ink-2);margin:0;">
         We'll email you a 6-digit code to check this address. ${CONFIG.paymentsEnabled
-          ? "You'll pay on the next step."
+          ? "Once it's confirmed you'll be taken to our card processor to pay."
           : "Your tutor will arrange payment with you directly before the first session \u2014 nothing is charged here."}
       </p>`;
     mFoot.innerHTML = `<button class="btn btn-primary btn-block" id="next">Send code</button>`;
@@ -1660,7 +1699,9 @@ function drawModal(){
         <div class="recap-row recap-total"><span>Refund</span><b>${free?money(b.price):money(0)}</b></div>
       </div>
       <p style="color:var(--ink-2);font-size:13px;margin:0;">${free
-        ? "More than 24 hours away, so it is refunded in full to the original card within 5 working days."
+        ? (CONFIG.paymentsEnabled
+            ? "More than 24 hours away, so the full amount goes back to your card. Card refunds usually take 5\u201310 working days."
+            : "More than 24 hours away, so nothing is owed for this session.")
         : "Starts within 24 hours, so under the cancellation policy it is charged in full. You can still cancel, but no refund is issued."}</p>`;
     mFoot.innerHTML = `<button class="btn btn-outline" id="keep">Keep it</button><button class="btn btn-danger" id="confirm-cancel">Cancel session</button>`;
   }
@@ -1889,6 +1930,16 @@ document.addEventListener("click", e => {
       e.target.disabled = true; e.target.textContent = "Checking…";
       api("/api/holds/confirm", {method:"POST", body:{holdId:currentHold.holdId, code:typed}})
         .then(async r => {
+          if(r.needsPayment){
+            mTitle.textContent = "Taking you to payment";
+            mBody.innerHTML = `<div class="done"><div class="tick">\u2192</div>
+              <div style="font-size:17px;font-weight:600;">Redirecting to our card processor</div>
+              <p style="color:var(--ink-2);">Your slot is held while you pay. You'll come straight back here afterwards.</p></div>`;
+            mFoot.innerHTML = "";
+            const c = await api(`/api/holds/${encodeURIComponent(r.holdId)}/checkout`, {method:"POST"});
+            window.location.assign(c.url);
+            return;
+          }
           lastOrder = {
             made: r.bookings.map(b => ({...b, date:new Date(b.day + "T12:00:00")})),
             skipped: (r.skipped || []).map(d => fmtDate(new Date(d + "T12:00:00")))
