@@ -25,6 +25,40 @@ const CURRENCY = process.env.CURRENCY || "gbp";
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "data.json");
 
+/* ---------------- encryption for bank details ----------------
+   Bank details are encrypted with AES-256-GCM. The key lives in a separate
+   file next to the data, or in ENCRYPTION_KEY. Lose the key and the bank
+   details are unrecoverable — the rest of the data is unaffected. */
+const KEY_PATH = process.env.KEY_PATH || path.join(__dirname, ".enc-key");
+function loadKey() {
+  if (process.env.ENCRYPTION_KEY) return crypto.createHash("sha256").update(process.env.ENCRYPTION_KEY).digest();
+  try { return Buffer.from(fs.readFileSync(KEY_PATH, "utf8").trim(), "hex"); }
+  catch {
+    const k = crypto.randomBytes(32);
+    try { fs.writeFileSync(KEY_PATH, k.toString("hex"), { mode: 0o600 }); }
+    catch (e) { console.error("Could not save the encryption key:", e.message); }
+    return k;
+  }
+}
+const ENC_KEY = loadKey();
+function encrypt(text) {
+  if (!text) return null;
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv("aes-256-gcm", ENC_KEY, iv);
+  const out = Buffer.concat([c.update(String(text), "utf8"), c.final()]);
+  return ["v1", iv.toString("hex"), c.getAuthTag().toString("hex"), out.toString("hex")].join(":");
+}
+function decrypt(blob) {
+  if (!blob) return "";
+  try {
+    const [, ivh, tagh, data] = String(blob).split(":");
+    const d = crypto.createDecipheriv("aes-256-gcm", ENC_KEY, Buffer.from(ivh, "hex"));
+    d.setAuthTag(Buffer.from(tagh, "hex"));
+    return Buffer.concat([d.update(Buffer.from(data, "hex")), d.final()]).toString("utf8");
+  } catch { return ""; }
+}
+const maskAccount = n => (!n ? "" : "•••• " + String(n).slice(-4));
+
 /* ---------------- storage ---------------- */
 const EMPTY = { applications: [], tutors: [], bookings: [], holds: [], waitlist: [] };
 function load() {
@@ -35,6 +69,25 @@ function save(db) {
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 let db = load();
+
+/* ---------------- the admin account ----------------
+   Seeded once, never listed as a tutor. Change the password from the
+   default as soon as you've signed in. */
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "argandtutors@gmail.com").toLowerCase();
+const ADMIN_DEFAULT_PASSWORD = process.env.ADMIN_PASSWORD || "Confazzled28@";
+const PLATFORM_COMMISSION = Math.min(0.9, Math.max(0, Number(process.env.PLATFORM_COMMISSION ?? 0.2)));
+if (!Array.isArray(db.admins)) db.admins = [];
+function ensureAdmin() {
+  let a = db.admins.find(x => x.email === ADMIN_EMAIL);
+  if (!a) {
+    a = { id: crypto.randomUUID(), email: ADMIN_EMAIL, name: "Argand Admin",
+          passwordHash: hashPassword(ADMIN_DEFAULT_PASSWORD), usingDefaultPassword: true,
+          createdAt: new Date().toISOString() };
+    db.admins.push(a);
+    save(db);
+  }
+  return a;
+}
 
 /* ---------------- passwords ---------------- */
 function hashPassword(pw) {
@@ -160,6 +213,9 @@ async function createApplication(req, res, ip) {
   if (!Array.isArray(b.subjectIds) || !b.subjectIds.length) errors.push("subjects");
   if (!Array.isArray(b.grades) || !b.grades.some(g => g.grade === "A*")) errors.push("grades");
   if (!b.bio || String(b.bio).trim().length < 20) errors.push("bio");
+  if (clean(b.bankHolder).length < 2) errors.push("bankHolder");
+  if (clean(b.bankSortCode).replace(/\D/g, "").length !== 6) errors.push("bankSortCode");
+  if (clean(b.bankAccountNumber).replace(/\D/g, "").length !== 8) errors.push("bankAccountNumber");
   if (errors.length) return json(res, 400, { error: "Some details are missing or invalid.", fields: errors });
 
   const email = String(b.email).trim().toLowerCase();
@@ -182,6 +238,12 @@ async function createApplication(req, res, ip) {
     subjectNames: b.subjectNames || [],
     bio: String(b.bio).trim(),
     phone: clean(b.phone, 32),
+    bank: {
+      holder: clean(b.bankHolder, 80),
+      sortCode: encrypt(clean(b.bankSortCode, 12).replace(/\D/g, "")),
+      accountNumber: encrypt(clean(b.bankAccountNumber, 12).replace(/\D/g, "")),
+      last4: clean(b.bankAccountNumber, 12).replace(/\D/g, "").slice(-4)
+    },
     code: sixDigits(),
     approveToken: crypto.randomBytes(24).toString("hex"),
     attempts: 0,
@@ -241,6 +303,7 @@ async function verifyApplication(req, res, id, ip) {
     premium: 3,
     rates: {},
     phone: app.phone || "",
+    bank: app.bank || null,
     photo: null,
     availability: {},
     blocked: [],
@@ -278,13 +341,26 @@ async function login(req, res, ip) {
   if (!rateLimit(ip, "login", 10, 15 * 60 * 1000))
     return json(res, 429, { error: "Too many attempts. Try again shortly." });
   const b = await readBody(req);
-  const t = db.tutors.find(x => x.email === String(b.email || "").trim().toLowerCase());
+  const email = clean(b.email).toLowerCase();
+
+  const admin = db.admins.find(x => x.email === email);
+  if (admin) {
+    if (!verifyPassword(String(b.password || ""), admin.passwordHash))
+      return json(res, 401, { error: "Those details don't match an account." });
+    const at = crypto.randomBytes(24).toString("hex");
+    admin.session = { token: at, expires: Date.now() + 7 * 864e5 };
+    save(db);
+    return json(res, 200, { token: at, role: "admin",
+      admin: { name: admin.name, email: admin.email, usingDefaultPassword: !!admin.usingDefaultPassword } });
+  }
+
+  const t = db.tutors.find(x => x.email === email);
   if (!t || !t.active || !verifyPassword(String(b.password || ""), t.passwordHash))
     return json(res, 401, { error: "Those details don't match an account." });
   const token = crypto.randomBytes(24).toString("hex");
   t.session = { token, expires: Date.now() + 7 * 864e5 };
   save(db);
-  json(res, 200, { token, tutor: { ...publicTutor(t), phone: t.phone || "", email: t.email } });
+  json(res, 200, { token, role: "tutor", tutor: { ...publicTutor(t), phone: t.phone || "", email: t.email } });
 }
 
 
@@ -335,6 +411,12 @@ const money = n => "\u00a3" + n.toFixed(2).replace(/\.00$/, "");
 const wrap = i => `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:15px;line-height:1.6;color:#111;max-width:520px">${i}<p style="color:#777;font-size:12px;margin-top:28px">${esc(BRAND)}</p></div>`;
 const dayKey = d => d.toISOString().slice(0, 10);
 
+function currentAdmin(req) {
+  const h = req.headers.authorization || "";
+  const token = h.startsWith("Bearer ") ? h.slice(7) : null;
+  if (!token) return null;
+  return db.admins.find(x => x.session && x.session.token === token && x.session.expires > Date.now()) || null;
+}
 function currentTutor(req) {
   const h = req.headers.authorization || "";
   const token = h.startsWith("Bearer ") ? h.slice(7) : null;
@@ -504,6 +586,29 @@ async function completeCheckout(req, res, holdId, sessionId) {
   if (session.payment_status !== "paid") return json(res, 402, { error: "That payment hasn't completed." });
 
   return finaliseBooking(res, hold, { paid: true, sessionId, paymentIntent: session.payment_intent });
+}
+
+// What a tutor has taught and what they're owed. A session counts once it has
+// finished; anything already settled is excluded from the outstanding figure.
+function earningsFor(tutorId) {
+  const now = Date.now();
+  let hours = 0, gross = 0, outstanding = 0, sessions = 0, upcoming = 0;
+  for (const b of db.bookings) {
+    if (b.tutorId !== tutorId || b.status !== "confirmed") continue;
+    const end = new Date(`${b.day}T${String(b.hour).padStart(2, "0")}:00:00Z`).getTime() + b.mins * 6e4;
+    if (end > now) { upcoming++; continue; }
+    sessions++;
+    hours += b.mins / 60;
+    gross += b.price;
+    if (!b.settledAt) outstanding += b.price;
+  }
+  const round = n => Math.round(n * 100) / 100;
+  return {
+    sessions, upcoming, hours: round(hours), gross: round(gross),
+    commission: round(outstanding * PLATFORM_COMMISSION),
+    owed: round(outstanding * (1 - PLATFORM_COMMISSION)),
+    outstandingGross: round(outstanding)
+  };
 }
 
 /* ---------- booking: hold the slot, verify the email, then confirm ---------- */
@@ -846,6 +951,94 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
+    if (p.startsWith("/api/admin")) {
+      const admin = currentAdmin(req);
+      if (!admin) return json(res, 401, { error: "Admin sign-in required." });
+
+      if (p === "/api/admin/overview" && req.method === "GET") {
+        const tutors = db.tutors.map(t => ({
+          ...publicTutor(t), email: t.email, phone: t.phone || "", active: t.active,
+          bank: t.bank ? { holder: t.bank.holder, last4: t.bank.last4 } : null,
+          earnings: earningsFor(t.id)
+        }));
+        const totals = tutors.reduce((a, t) => ({
+          owed: a.owed + t.earnings.owed, hours: a.hours + t.earnings.hours,
+          gross: a.gross + t.earnings.gross
+        }), { owed: 0, hours: 0, gross: 0 });
+        return json(res, 200, {
+          tutors,
+          totals: { owed: Math.round(totals.owed * 100) / 100, hours: Math.round(totals.hours * 100) / 100,
+                    gross: Math.round(totals.gross * 100) / 100 },
+          commission: PLATFORM_COMMISSION,
+          applications: db.applications.filter(a => a.status === "pending")
+            .map(a => ({ id: a.id, name: a.name, email: a.email, university: a.university,
+                         course: a.course, grades: a.grades, createdAt: a.createdAt })),
+          bookings: db.bookings.length,
+          usingDefaultPassword: !!admin.usingDefaultPassword
+        });
+      }
+
+      let am;
+      if ((am = p.match(/^\/api\/admin\/tutors\/([^/]+)\/bank$/)) && req.method === "GET") {
+        const t = db.tutors.find(x => x.id === am[1]);
+        if (!t || !t.bank) return json(res, 404, { error: "No bank details on file." });
+        console.log(`[audit] ${new Date().toISOString()} admin viewed bank details for ${t.name}`);
+        return json(res, 200, {
+          holder: t.bank.holder,
+          sortCode: decrypt(t.bank.sortCode).replace(/(\d{2})(\d{2})(\d{2})/, "$1-$2-$3"),
+          accountNumber: decrypt(t.bank.accountNumber)
+        });
+      }
+      if ((am = p.match(/^\/api\/admin\/tutors\/([^/]+)$/)) && req.method === "PATCH") {
+        const t = db.tutors.find(x => x.id === am[1]);
+        if (!t) return json(res, 404, { error: "No such tutor." });
+        const body = await readBody(req);
+        if (body.active !== undefined) t.active = !!body.active;
+        if (body.headline !== undefined) t.headline = clean(body.headline, 70);
+        if (body.bio !== undefined) t.bio = clean(body.bio, 600);
+        if (body.phone !== undefined) t.phone = clean(body.phone, 32);
+        if (body.university !== undefined) t.university = clean(body.university, 80);
+        if (body.course !== undefined) t.course = clean(body.course, 80);
+        if (body.premium !== undefined) t.premium = Math.max(0, Math.min(30, Number(body.premium) || 0));
+        if (Array.isArray(body.subjectIds)) t.subjectIds = body.subjectIds.filter(subjectById);
+        if (body.rates && typeof body.rates === "object") {
+          const next = {};
+          for (const [k, v] of Object.entries(body.rates)) {
+            if (!subjectById(k) || v === "" || v === null) continue;
+            next[k] = Math.max(5, Math.min(300, Number(v) || 0));
+          }
+          t.rates = next;
+        }
+        save(db);
+        return json(res, 200, { ...publicTutor(t), active: t.active, email: t.email, phone: t.phone || "" });
+      }
+      if ((am = p.match(/^\/api\/admin\/tutors\/([^/]+)\/settle$/)) && req.method === "POST") {
+        const t = db.tutors.find(x => x.id === am[1]);
+        if (!t) return json(res, 404, { error: "No such tutor." });
+        const now = Date.now(), stamp = new Date().toISOString();
+        let n = 0;
+        for (const b of db.bookings) {
+          if (b.tutorId !== t.id || b.status !== "confirmed" || b.settledAt) continue;
+          const end = new Date(`${b.day}T${String(b.hour).padStart(2, "0")}:00:00Z`).getTime() + b.mins * 6e4;
+          if (end <= now) { b.settledAt = stamp; n++; }
+        }
+        save(db);
+        console.log(`[audit] ${stamp} admin settled ${n} sessions for ${t.name}`);
+        return json(res, 200, { settled: n, earnings: earningsFor(t.id) });
+      }
+      if (p === "/api/admin/password" && req.method === "POST") {
+        const body = await readBody(req);
+        if (String(body.password || "").length < 10)
+          return json(res, 400, { error: "Use at least 10 characters." });
+        admin.passwordHash = hashPassword(String(body.password));
+        admin.usingDefaultPassword = false;
+        admin.session = null;
+        save(db);
+        return json(res, 200, { ok: true });
+      }
+      return json(res, 404, { error: "No such endpoint." });
+    }
+
     if (p.startsWith("/api/")) return json(res, 404, { error: "No such endpoint." });
     serveStatic(req, res);
   } catch (err) {
@@ -900,6 +1093,12 @@ server.listen(PORT, () => {
   console.log(`Sending mail: ${BREVO_API_KEY ? "yes, via Brevo" : RESEND_API_KEY ? "yes, via Resend" : "no — codes will be printed to this console"}`);
   console.log(`Card payments: ${PAYMENTS_ENABLED ? "on, via Stripe" + (STRIPE_SECRET_KEY.startsWith("sk_test") ? " (TEST MODE \u2014 no real money)" : " (LIVE)") : "off \u2014 bookings are taken, you invoice separately"}`);
   console.log(`Data file:    ${DB_PATH}`);
+  const admin = ensureAdmin();
+  console.log(`Admin login:  ${ADMIN_EMAIL}`);
+  if (admin.usingDefaultPassword)
+    console.log(`\n  \u26a0  The admin account is still on its default password.\n     Sign in and change it under Admin \u2192 Security before going live.\n`);
+  if (!process.env.ENCRYPTION_KEY)
+    console.log(`Bank details: encrypted with the key in ${KEY_PATH} \u2014 back this file up, and never commit it`);
   HOME = findHomePage();
   if (HOME.warning) {
     console.log(`\n  ⚠  ${HOME.warning}\n`);

@@ -22,6 +22,27 @@ button{font-family:inherit;font-size:inherit;cursor:pointer;}
 select{font-family:inherit;font-size:13px;}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:2px;}
 @keyframes rise{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+
+/* an x-y graph settling into an Argand diagram, then back again */
+#argand-anim svg{display:block;overflow:visible;}
+#argand-anim .lab{font-size:11px;fill:var(--ink-3);font-family:inherit;font-style:italic;}
+#argand-anim .zlabel{font-size:10px;fill:var(--blue);font-family:ui-monospace,monospace;}
+@keyframes fadeSwap{0%,40%{opacity:1;}55%,90%{opacity:0;}100%{opacity:1;}}
+@keyframes fadeIn{0%,40%{opacity:0;}60%,90%{opacity:1;}100%{opacity:0;}}
+@keyframes drawOut{0%,35%{stroke-dashoffset:0;}55%,90%{stroke-dashoffset:300;}100%{stroke-dashoffset:0;}}
+@keyframes drawIn{0%,40%{stroke-dashoffset:140;}60%,90%{stroke-dashoffset:0;}100%{stroke-dashoffset:140;}}
+#argand-anim .curve{stroke-dasharray:300;animation:drawOut 11s ease-in-out infinite;}
+#argand-anim .vec{stroke-dasharray:140;animation:drawIn 11s ease-in-out infinite;}
+#argand-anim .lab-x,#argand-anim .lab-y{animation:fadeSwap 11s ease-in-out infinite;}
+#argand-anim .lab-re,#argand-anim .lab-im,#argand-anim .pt,
+#argand-anim .dashes,#argand-anim .zlabel{animation:fadeIn 11s ease-in-out infinite;}
+#argand-anim .lab-re,#argand-anim .lab-im{opacity:0;}
+@media (prefers-reduced-motion:reduce){
+  #argand-anim *{animation:none!important;}
+  #argand-anim .lab-re,#argand-anim .lab-im,#argand-anim .pt,#argand-anim .dashes,#argand-anim .zlabel{opacity:1;}
+  #argand-anim .lab-x,#argand-anim .lab-y,#argand-anim .curve{opacity:0;}
+  #argand-anim .vec{stroke-dasharray:none;}
+}
 .rise{animation:rise .22s ease-out both;}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 
@@ -366,6 +387,11 @@ button.row:hover::before{opacity:1;}
       <span id="rail-cancel">Free to cancel up to 24 hours before a session, using the link in your
       confirmation email. Inside 24 hours the session is charged in full.</span>
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
+      <div id="argand-anim" style="margin:-4px 0 12px;"></div>
+      <b style="color:var(--ink);display:block;margin-bottom:6px;">Self-teaching?</b>
+      Studying a subject your school doesn't offer, retaking, or working from home? Book single sessions
+      when you get stuck rather than a weekly slot.
+      <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Why Argand</b>
       The Argand diagram plots real against imaginary. We plot four subjects against the people who sat them most recently.
     </div>
@@ -403,6 +429,33 @@ button.row:hover::before{opacity:1;}
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<template id="argand-svg">
+  <svg viewBox="0 0 260 150" width="100%" role="img" aria-label="An x-y graph turning into an Argand diagram">
+    <g stroke="rgba(0,0,0,.18)" stroke-width="1">
+      <line x1="20" y1="120" x2="240" y2="120"/>
+      <line x1="60" y1="18" x2="60" y2="132"/>
+    </g>
+    <g class="ticks" stroke="rgba(0,0,0,.12)" stroke-width="1">
+      <line x1="110" y1="116" x2="110" y2="124"/><line x1="160" y1="116" x2="160" y2="124"/>
+      <line x1="210" y1="116" x2="210" y2="124"/>
+      <line x1="56" y1="85" x2="64" y2="85"/><line x1="56" y1="50" x2="64" y2="50"/>
+    </g>
+    <text class="lab lab-x" x="238" y="136" text-anchor="end">x</text>
+    <text class="lab lab-y" x="52" y="24" text-anchor="end">y</text>
+    <text class="lab lab-re" x="238" y="136" text-anchor="end">Re</text>
+    <text class="lab lab-im" x="52" y="24" text-anchor="end">Im</text>
+    <path class="curve" d="M60 120 Q110 40 160 92 T240 30" fill="none" stroke="var(--blue)" stroke-width="2"
+          stroke-linecap="round"/>
+    <line class="vec" x1="60" y1="120" x2="175" y2="55" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"/>
+    <g class="dashes" stroke="var(--blue)" stroke-width="1" stroke-dasharray="3 3" opacity="0">
+      <line x1="175" y1="55" x2="175" y2="120"/>
+      <line x1="175" y1="55" x2="60" y2="55"/>
+    </g>
+    <circle class="pt" cx="175" cy="55" r="4.5" fill="var(--blue)" opacity="0"/>
+    <text class="zlabel" x="182" y="48" opacity="0">a + bi</text>
+  </svg>
+</template>
 
 <script>
 const BRAND = "Argand Tutors";
@@ -493,8 +546,8 @@ async function loadTutors() {
 const state = {
   route:{name:"browse"}, level:"All", area:"All", query:"", tutorFilter:"All",
   dayIndex:0, slotHour:null, lengthMins:60,
-  step:null, name:"", email:"", phone:"", promo:"", promoPercent:0,
-  rescheduleRef:null, signedIn:null, showPw:false, token:null,
+  step:null, name:"", email:"", phone:"", promo:"", promoInput:"", promoPercent:0,
+  rescheduleRef:null, signedIn:null, isAdmin:false, adminData:null, adminOpen:null, showPw:false, token:null,
   repeat:1, waitHour:null, noteRef:null,
   applyStep:"form", applyId:null, applyCode:null, applyPicked:[], applyErr:""
 };
@@ -670,6 +723,7 @@ function parseRoute(){
     return t ? {name:"profile", tutorId:t.id, subjectId:t.subjects[0]} : {name:"tutors"};
   }
   if(parts[0] === "manage" && parts[1]) return {name:"manage", manageToken:parts[1]};
+  if(parts[0] === "admin") return {name:"admin"};
   if(parts[0] === "paid" && parts[2]) return {name:"paid", holdId:parts[1], sessionId:parts[2]};
   if(parts[0] === "book" && parts[2]){
     const t = tutor(parts[2]), s = subject(+parts[1]);
@@ -688,6 +742,7 @@ function go(hash){ if(location.hash === hash) route(); else location.hash = hash
 
 function route(){
   const r = parseRoute();
+  if(r.name === "admin" && !state.isAdmin){ toast("Sign in as the admin."); return go("#/staff"); }
   if(["dash","availability","edit"].includes(r.name) && !state.signedIn){ toast("Sign in to reach that page."); return go("#/staff"); }
   if(r.name === "login" && state.signedIn) return go("#/staff/dashboard");
   if(r.name === "book" || r.name === "profile"){
@@ -712,7 +767,7 @@ function render(){
   page.classList.toggle("is-narrow", n === "login");
   ({browse:viewBrowse, subject:viewSubject, tutors:viewTutors, profile:viewProfile, book:viewBook,
     bookings:viewBookings, login:viewLogin, dash:viewDash, availability:viewAvailability,
-    edit:viewEdit, apply:viewApply, manage:viewManage, paid:viewPaid}[n])();
+    edit:viewEdit, apply:viewApply, manage:viewManage, paid:viewPaid, admin:viewAdmin}[n])();
   main.firstElementChild && main.firstElementChild.classList.add("rise");
   rails();
   const tab = {browse:"browse", subject:"browse", book:"browse", tutors:"tutors", profile:"tutors", apply:"tutors", bookings:"bookings", manage:"bookings", paid:"bookings"}[n] || "";
@@ -731,9 +786,11 @@ function rails(){
   document.getElementById("rail-avatar").innerHTML = t
     ? avatarHtml(t, "lg", true)
     : `<div class="avatar avatar-lg avatar-ring" style="background:#8c6d4f;">G</div>`;
-  document.getElementById("rail-name").textContent = t ? t.name : "Booking as a guest";
-  document.getElementById("rail-sub").textContent = t ? "Signed in as a tutor" : "Book without an account";
-  document.getElementById("rail-links").innerHTML = t
+  document.getElementById("rail-name").textContent = state.isAdmin ? "Argand Admin" : t ? t.name : "Booking as a guest";
+  document.getElementById("rail-sub").textContent = state.isAdmin ? "Owner account" : t ? "Signed in as a tutor" : "Book without an account";
+  document.getElementById("rail-links").innerHTML = state.isAdmin
+    ? `<button data-go="#/admin">Admin console</button><button data-signout>Sign out</button>`
+    : t
     ? `<button data-go="#/staff/dashboard">Dashboard</button>
        <button data-go="#/staff/availability">My availability</button>
        <button data-go="#/staff/edit">Edit profile</button>
@@ -781,7 +838,8 @@ function viewBrowse(){
         <div class="hero-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#2743c4" stroke-width="1.4" stroke-linecap="round">
           <path d="M4 20V4M4 20h16"/><path d="M4 20l11-11"/><circle cx="15" cy="9" r="2.6" fill="#2743c4" stroke="none"/></svg></div>
         <h1>Four subjects. Taught properly.</h1>
-        <p>Maths, further maths, physics and computer science at GCSE and A-Level, one to one, from tutors who sat these exams recently themselves.</p>
+        <p>Maths, further maths, physics and computer science at GCSE and A-Level, one to one, from tutors
+        who sat these exams recently themselves. Whether you're following a class or teaching yourself.</p>
         <div class="hero-stats">
           <span class="stat-pill"><b>${TUTORS.length}</b> tutors</span>
           <span class="stat-pill"><b>${openNow}</b> free today</span>
@@ -824,6 +882,19 @@ function viewBrowse(){
           </div>
         </button>`).join("")
       : `<div class="empty"><b>Nothing matches those filters</b>Clear the search box or choose a different level.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="statement" style="border-left-color:var(--green);">
+        <h2>Teaching yourself an A-Level?</h2>
+        <p>Plenty of students end up studying a subject their school doesn't offer, or doesn't have the
+        staff for — further maths and computer science most often. Some are retaking, some are on a gap
+        year, some are studying from home.</p>
+        <p>That's a large part of what we do. Self-teaching is mostly fine until you hit a topic that
+        won't click, or you have no idea whether your written answers would actually earn the marks.
+        Both of those are much easier with someone who sat the paper recently, and neither needs a
+        weekly commitment — book a single session when you're stuck, or a block when you're revising.</p>
+      </div>
     </div>
 
     <div class="card card-pad" style="text-align:center;">
@@ -1167,6 +1238,127 @@ function viewPaid(){
     });
 }
 
+function viewAdmin(){
+  if(!state.adminData){
+    main.innerHTML = `<div class="card card-pad"><div class="empty">Loading…</div></div>`;
+    api("/api/admin/overview")
+      .then(d => { state.adminData = d; if(state.route.name === "admin") render(); })
+      .catch(err => {
+        main.innerHTML = `<div class="card"><div class="card-head">Admin</div>
+          <div class="empty"><b>${esc(err.message)}</b>
+          <div style="margin-top:14px;"><button class="btn btn-outline" data-go="#/staff">Sign in again</button></div></div></div>`;
+      });
+    return;
+  }
+  const d = state.adminData;
+  const pct = Math.round(d.commission * 100);
+
+  main.innerHTML = `
+    <div class="card">
+      <div class="card-head">Admin<span class="sub">Owner only</span></div>
+      <div class="card-pad" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <span class="stat-pill"><b>${d.tutors.length}</b> tutors</span>
+        <span class="stat-pill"><b>${d.bookings}</b> bookings</span>
+        <span class="stat-pill"><b>${d.totals.hours}</b> hours taught</span>
+        <span class="stat-pill">Collected <b>${money(d.totals.gross)}</b></span>
+        <span class="stat-pill" style="border-color:var(--red);color:var(--red);">You owe <b>${money(d.totals.owed)}</b></span>
+      </div>
+    </div>
+
+    ${d.usingDefaultPassword ? `<div class="card card-pad" style="border-left:3px solid var(--red);">
+      <b>Change the admin password</b>
+      <div style="color:var(--ink-2);margin-bottom:10px;">This account is still on the password it shipped with.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+        <input id="admin-pw" type="password" placeholder="New password, 10+ characters"
+          style="flex:1 1 220px;height:40px;border:1px solid var(--ink-2);border-radius:4px;padding:0 10px;font-size:16px;">
+        <button class="btn btn-primary" id="admin-pw-save">Update</button>
+      </div></div>` : ""}
+
+    ${d.applications.length ? `<div class="card">
+      <div class="card-head">Waiting for approval<span class="sub">${d.applications.length}</span></div>
+      ${d.applications.map(a => `<div class="row" style="padding:12px 16px;">
+        <div class="row-body">
+          <div class="row-title" style="font-size:15px;">${esc(a.name)}</div>
+          <div class="row-meta">${esc(a.course)}, ${esc(a.university)} · ${esc(a.email)}</div>
+          <div class="row-note">${a.grades.map(g => `<span class="grade ${g.grade==="A*"?"top":""}"><b>${esc(g.grade)}</b>${esc(g.subject)}</span>`).join("")}</div>
+        </div>
+        <div class="row-side"><span class="badge badge-amber">Code sent to you</span></div>
+      </div>`).join("")}
+      <div class="card-pad" style="border-top:1px solid var(--line);font-size:12px;color:var(--ink-2);">
+        Approve by sending the applicant the six-digit code from your email.
+      </div>
+    </div>` : ""}
+
+    <div class="card">
+      <div class="card-head">Tutors<span class="sub">${pct}% platform commission</span></div>
+      ${d.tutors.length ? d.tutors.map(t => {
+        const e = t.earnings, open = state.adminOpen === t.id;
+        return `<div class="row" style="flex-direction:column;align-items:stretch;gap:10px;">
+          <div style="display:flex;gap:12px;align-items:flex-start;">
+            <div class="avatar avatar-md" style="background:${colourFor(t.name)};">${initials(t.name)}</div>
+            <div class="row-body">
+              <div class="row-title" style="font-size:15px;">${esc(t.name)}
+                ${t.active ? "" : `<span class="badge badge-red" style="margin-left:6px;">Deactivated</span>`}</div>
+              <div class="row-meta">${esc(t.email)}${t.phone ? " · " + esc(t.phone) : ""}</div>
+              <div class="row-note">
+                <span>${e.hours} hrs taught</span><span class="dot"></span>
+                <span>${e.sessions} sessions</span><span class="dot"></span>
+                <span>${e.upcoming} upcoming</span>
+              </div>
+            </div>
+            <div class="row-side">
+              <div class="price" style="color:${e.owed ? "var(--red)" : "var(--ink-3)"};">${money(e.owed)}</div>
+              <span class="hint" style="margin:0;">owed</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-outline btn-sm" data-admin-open="${t.id}">${open ? "Close" : "Manage"}</button>
+            ${e.owed ? `<button class="btn btn-primary btn-sm" data-admin-settle="${t.id}">Mark ${money(e.owed)} as paid</button>` : ""}
+          </div>
+          ${open ? adminPanel(t) : ""}
+        </div>`;
+      }).join("") : `<div class="empty"><b>No tutors yet</b>Approved applicants appear here.</div>`}
+    </div>
+
+    <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
+      Owed is calculated from finished sessions only, after ${pct}% commission. Marking as paid records
+      the settlement — make the bank transfer yourself, this doesn't move money.
+    </div>`;
+}
+
+function adminPanel(t){
+  const bank = state.adminBank && state.adminBank.id === t.id ? state.adminBank : null;
+  return `<div style="background:#fafafa;border:1px solid var(--line);border-radius:6px;padding:12px;">
+    <div style="font-weight:600;margin-bottom:8px;">Bank details</div>
+    ${t.bank ? `<div style="font-size:13px;color:var(--ink-2);">
+        ${esc(t.bank.holder)} · account ending ${esc(t.bank.last4)}
+        ${bank ? `<div class="ref" style="margin-top:6px;color:var(--ink);">
+            Sort code ${esc(bank.sortCode)} &nbsp; Account ${esc(bank.accountNumber)}</div>`
+          : `<div style="margin-top:8px;"><button class="btn btn-outline btn-sm" data-admin-bank="${t.id}">Reveal full details</button></div>`}
+      </div>` : `<div class="hint" style="margin:0;">None on file — this tutor applied before bank details were required.</div>`}
+
+    <div style="border-top:1px solid var(--line);margin:12px 0;"></div>
+    <div style="font-weight:600;margin-bottom:8px;">Edit account</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input data-af="headline" value="${esc(t.headline || "")}" placeholder="Headline"
+        style="flex:1 1 220px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+      <input data-af="phone" value="${esc(t.phone || "")}" placeholder="Phone"
+        style="flex:1 1 130px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <input data-af="university" value="${esc(t.university || "")}" placeholder="University"
+        style="flex:1 1 160px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+      <input data-af="course" value="${esc(t.course || "")}" placeholder="Course"
+        style="flex:1 1 160px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" data-admin-save="${t.id}">Save changes</button>
+      <button class="btn ${t.active ? "btn-danger" : "btn-outline"} btn-sm" data-admin-toggle="${t.id}">
+        ${t.active ? "Deactivate" : "Reactivate"}</button>
+    </div>
+  </div>`;
+}
+
 function viewManage(){
   main.innerHTML = `<div class="card card-pad"><div class="empty">Loading your booking…</div></div>`;
   api("/api/manage/" + encodeURIComponent(state.route.manageToken)).then(r => {
@@ -1188,7 +1380,7 @@ function viewLogin(){
       <div class="auth-title">Tutor sign in</div>
       <div class="auth-sub">Manage your availability, profile and sessions</div>
       <div class="field" id="f-lemail"><label for="i-lemail">Email</label>
-        <input id="i-lemail" type="email" autocomplete="username" placeholder="you@example.com">
+        <input id="i-lemail" type="email" autocomplete="username" placeholder="you@example.com" value="${esc(state.loginEmail || "")}">
         <div class="err">Enter the email your invitation was sent to.</div></div>
       <div class="field" id="f-lpw"><label for="i-lpw">Password</label>
         <input id="i-lpw" type="${state.showPw?"text":"password"}" autocomplete="current-password">
@@ -1392,6 +1584,7 @@ function viewEdit(){
    TUTOR APPLICATIONS — owner-approved account creation
    ============================================================ */
 state.applyForm = {name:"", email:"", pw:"", uni:"", course:"", year:"Second year", bio:"", phone:"",
+                   bankHolder:"", bankSort:"", bankAcc:"",
                    grades:[{s:"",g:"A*"},{s:"",g:"A"},{s:"",g:"A"}]};
 
 function readApplyForm(){
@@ -1400,6 +1593,9 @@ function readApplyForm(){
   f.name = g("a-name").value; f.email = g("a-email").value; f.pw = g("a-pw").value;
   f.uni = g("a-uni").value; f.course = g("a-course").value; f.year = g("a-year").value;
   f.bio = g("a-bio").value; f.phone = g("a-phone") ? g("a-phone").value : "";
+  if(g("a-bank-holder")) f.bankHolder = g("a-bank-holder").value;
+  if(g("a-bank-sort"))   f.bankSort = g("a-bank-sort").value;
+  if(g("a-bank-acc"))    f.bankAcc = g("a-bank-acc").value;
   f.grades = [0,1,2].map(i => ({s:g("a-gs"+i).value, g:g("a-gg"+i).value}));
 }
 
@@ -1492,6 +1688,24 @@ function viewApply(){
           <div class="field" id="fa-bio"><label for="a-bio">Why you'd be good at this</label>
             <textarea id="a-bio" maxlength="600" placeholder="A few sentences. What you're like to be taught by, and what you're best at explaining.">${esc(f.bio)}</textarea>
             <div class="err">Write a couple of sentences so we know who we're reading about.</div></div>
+
+          <div style="border-top:1px solid var(--line);margin:18px 0 14px;"></div>
+          <div style="font-weight:600;margin-bottom:2px;">Where we pay you</div>
+          <p style="color:var(--ink-2);font-size:13px;margin:0 0 12px;">
+            A UK current account in your own name. Stored encrypted, visible only to the owner,
+            and never shown to students.
+          </p>
+          <div class="field" id="fa-bankholder"><label for="a-bank-holder">Account holder name</label>
+            <input id="a-bank-holder" value="${esc(f.bankHolder)}" autocomplete="off">
+            <div class="err">Enter the name exactly as it appears on the account.</div></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <div class="field" style="flex:1 1 140px;" id="fa-banksort"><label for="a-bank-sort">Sort code</label>
+              <input id="a-bank-sort" inputmode="numeric" maxlength="8" placeholder="00-00-00" value="${esc(f.bankSort)}" autocomplete="off">
+              <div class="err">Six digits.</div></div>
+            <div class="field" style="flex:1 1 140px;" id="fa-bankacc"><label for="a-bank-acc">Account number</label>
+              <input id="a-bank-acc" inputmode="numeric" maxlength="8" placeholder="12345678" value="${esc(f.bankAcc)}" autocomplete="off">
+              <div class="err">Eight digits.</div></div>
+          </div>
 
           <button class="btn btn-primary btn-block" id="apply-submit">Submit application</button>
           <div class="hint" style="text-align:center;margin-top:10px;">
@@ -1600,6 +1814,15 @@ async function requestHold(){
   return currentHold;
 }
 function blockDiscount(n){ return n >= 4 ? 0.9 : 1; }
+// Anything the customer has typed gets stashed in state before the modal is
+// redrawn, so toggling a length or applying a code never wipes the form.
+function captureDetails(){
+  const g = id => document.getElementById(id);
+  if(g("i-name"))  state.name = g("i-name").value;
+  if(g("i-email")) state.email = g("i-email").value;
+  if(g("i-phone")) state.phone = g("i-phone").value;
+  if(g("i-promo")) state.promoInput = g("i-promo").value;
+}
 function promoMult(){ return state.promoPercent ? (100 - state.promoPercent) / 100 : 1; }
 function orderTotal(){
   const per = priceFor(state.route.tutorId, state.route.subjectId, state.lengthMins);
@@ -1638,7 +1861,7 @@ function drawModal(){
 
       <div class="field" id="f-promo"><label for="i-promo">Promo code</label>
         <div style="display:flex;gap:8px;">
-          <input id="i-promo" value="${esc(state.promo)}" placeholder="If you have one"
+          <input id="i-promo" value="${esc(state.promoInput)}" placeholder="If you have one"
             style="text-transform:uppercase;" autocapitalize="characters" spellcheck="false">
           <button class="btn btn-outline" id="apply-promo" style="flex:none;">Apply</button>
         </div>
@@ -1751,10 +1974,18 @@ function drawModal(){
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note]");
+  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save]");
   if(el){
-    if(el.dataset.signout !== undefined){ state.signedIn = null; state.token = null; store.clear("argand_token"); toast("Signed out."); return go("#/"); }
-    if(el.dataset.go){ if(el.dataset.go.startsWith("#/staff")) dashLoaded = false; return go(el.dataset.go); }
+    if(el.dataset.signout !== undefined){
+      state.signedIn = null; state.isAdmin = false; state.adminData = null; state.token = null;
+      store.clear("argand_token"); store.clear("argand_role");
+      toast("Signed out."); return go("#/");
+    }
+    if(el.dataset.go){
+      if(el.dataset.go.startsWith("#/staff")) dashLoaded = false;
+      if(el.dataset.go === "#/admin") state.adminData = null;
+      return go(el.dataset.go);
+    }
     if(el.dataset.level){ state.level = el.dataset.level; return render(); }
     if(el.dataset.area){ state.area = el.dataset.area; return render(); }
     if(el.dataset.tfilter){ state.tutorFilter = el.dataset.tfilter; return render(); }
@@ -1762,7 +1993,7 @@ document.addEventListener("click", e => {
     if(el.dataset.day){ state.dayIndex = +el.dataset.day; state.slotHour = null; return render(); }
     if(el.dataset.slot){ state.slotHour = +el.dataset.slot; return render(); }
     if(el.dataset.wait){ state.waitHour = +el.dataset.wait; return openModal("waitlist"); }
-    if(el.dataset.repeat){ state.repeat = +el.dataset.repeat; return drawModal(); }
+    if(el.dataset.repeat){ captureDetails(); state.repeat = +el.dataset.repeat; return drawModal(); }
     if(el.dataset.note){ state.noteRef = el.dataset.note; return openModal("note"); }
     if(el.dataset.apick){
       readApplyForm();
@@ -1798,7 +2029,7 @@ document.addEventListener("click", e => {
   }
 
   if(e.target.id === "go"){
-    state.repeat = 1; state.promo = ""; state.promoPercent = 0;
+    state.repeat = 1; state.promo = ""; state.promoInput = ""; state.promoPercent = 0;
     if(state.rescheduleRef){
       const b = BOOKINGS.find(x => x.ref === state.rescheduleRef);
       const blocks = LENGTHS.find(l => l.mins === b.mins).blocks;
@@ -1861,6 +2092,9 @@ document.addEventListener("click", e => {
     setErr("fa-subjects", state.applyPicked.length === 0);
     setErr("fa-bio", f.bio.trim().length < 20);
     setErr("fa-phone", f.phone.replace(/\D/g, "").length < 7);
+    setErr("fa-bankholder", f.bankHolder.trim().length < 2);
+    setErr("fa-banksort", f.bankSort.replace(/\D/g, "").length !== 6);
+    setErr("fa-bankacc", f.bankAcc.replace(/\D/g, "").length !== 8);
     const named = f.grades.filter(g => g.s.trim());
     setErr("fa-grades", !named.length || !named.some(g => g.g === "A*"));
     if(bad.length){ document.getElementById(bad[0])?.scrollIntoView?.({block:"center"}); return; }
@@ -1872,7 +2106,10 @@ document.addEventListener("click", e => {
       grades:named.map(g => ({subject:g.s.trim(), grade:g.g})),
       subjectIds:state.applyPicked.slice(),
       subjectNames:state.applyPicked.map(id => subject(id).name),
-      bio:f.bio.trim()
+      bio:f.bio.trim(),
+      bankHolder:f.bankHolder.trim(),
+      bankSortCode:f.bankSort.replace(/\D/g, ""),
+      bankAccountNumber:f.bankAcc.replace(/\D/g, "")
     }).then(() => {
       state.applyErr = ""; state.applyStep = "code"; render();
     }).catch(err => {
@@ -1898,20 +2135,21 @@ document.addEventListener("click", e => {
   }
 
   if(e.target.id === "apply-promo"){
+    captureDetails();
     const box = document.getElementById("i-promo");
     const code = box.value.trim().toUpperCase();
     const msg = document.getElementById("promo-msg");
     const field = document.getElementById("f-promo");
-    if(!code){ state.promo = ""; state.promoPercent = 0; field.classList.remove("has-err"); msg.innerHTML = ""; return drawModal(); }
+    if(!code){ state.promo = ""; state.promoInput = ""; state.promoPercent = 0; field.classList.remove("has-err"); msg.innerHTML = ""; return drawModal(); }
     e.target.disabled = true;
     api("/api/promo", {method:"POST", body:{code}})
       .then(r => {
-        state.promo = r.label; state.promoPercent = r.percent;
+        state.promo = r.label; state.promoInput = r.label; state.promoPercent = r.percent;
         toast(`${r.label} applied — ${r.percent}% off.`);
         drawModal();
       })
       .catch(() => {
-        state.promo = code; state.promoPercent = 0;   // keep what they typed, drop the discount
+        state.promo = ""; state.promoInput = code; state.promoPercent = 0;   // keep what they typed, drop the discount
         drawModal();                                   // redraw so the total is right again
         const f2 = document.getElementById("f-promo");
         const m2 = document.getElementById("promo-msg");
@@ -1934,16 +2172,79 @@ document.addEventListener("click", e => {
     tutor(state.signedIn).rates = {};
     return saveMe({rates:{}}, "Back to the suggested prices.");
   }
+  if(el && el.dataset.adminOpen){
+    state.adminOpen = state.adminOpen === el.dataset.adminOpen ? null : el.dataset.adminOpen;
+    state.adminBank = null;
+    return render();
+  }
+  if(el && el.dataset.adminBank){
+    const id = el.dataset.adminBank;
+    api(`/api/admin/tutors/${id}/bank`)
+      .then(b => { state.adminBank = { id, ...b }; render(); })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.adminSettle){
+    const id = el.dataset.adminSettle;
+    api(`/api/admin/tutors/${id}/settle`, {method:"POST"})
+      .then(r => { toast(`${r.settled} session${r.settled===1?"":"s"} marked as paid.`);
+        state.adminData = null; render(); })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.adminToggle){
+    const id = el.dataset.adminToggle;
+    const t = state.adminData.tutors.find(x => x.id === id);
+    api(`/api/admin/tutors/${id}`, {method:"PATCH", body:{active: !t.active}})
+      .then(() => { toast(t.active ? "Tutor deactivated." : "Tutor reactivated.");
+        state.adminData = null; render(); })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.adminSave){
+    const id = el.dataset.adminSave, body = {};
+    document.querySelectorAll("[data-af]").forEach(i => body[i.dataset.af] = i.value);
+    api(`/api/admin/tutors/${id}`, {method:"PATCH", body})
+      .then(() => { toast("Saved."); state.adminData = null; render(); })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(e.target.id === "admin-pw-save"){
+    const pw = document.getElementById("admin-pw").value;
+    if(pw.length < 10) return toast("Use at least 10 characters.");
+    api("/api/admin/password", {method:"POST", body:{password:pw}})
+      .then(() => {
+        toast("Password changed. Sign in again.");
+        state.isAdmin = false; state.adminData = null; state.token = null;
+        store.clear("argand_token"); store.clear("argand_role");
+        go("#/staff");
+      })
+      .catch(err => toast(err.message));
+    return;
+  }
   if(e.target.id === "resend"){
     e.target.disabled = true;
     requestHold().then(() => { toast("New code sent."); drawModal(); }).catch(err => toast(err.message));
     return;
   }
-  if(e.target.id === "pw-toggle"){ state.showPw = !state.showPw; return render(); }
+  if(e.target.id === "pw-toggle"){
+    // toggle the field in place — re-rendering would throw away what's typed
+    const inp = document.getElementById("i-lpw");
+    state.showPw = !state.showPw;
+    if(inp){
+      const pos = inp.selectionStart;
+      inp.type = state.showPw ? "text" : "password";
+      inp.focus();
+      try { inp.setSelectionRange(pos, pos); } catch {}
+    }
+    e.target.textContent = state.showPw ? "Hide" : "Show";
+    return;
+  }
   if(e.target.id === "forgot") return toast("Password reset email sent (not wired up in this draft).");
 
   if(e.target.id === "signin"){
     const email = document.getElementById("i-lemail").value.trim().toLowerCase();
+    state.loginEmail = email;
     const pw = document.getElementById("i-lpw").value;
     if(!email || !pw){
       document.getElementById("f-lemail").classList.toggle("has-err", !email);
@@ -1955,6 +2256,13 @@ document.addEventListener("click", e => {
       .then(async r => {
         state.token = r.token;
         store.set("argand_token", r.token);
+        if(r.role === "admin"){
+          state.isAdmin = true; state.signedIn = null;
+          store.set("argand_role", "admin");
+          toast("Signed in as admin");
+          return go("#/admin");
+        }
+        store.set("argand_role", "tutor");
         await loadTutors();
         if(!tutor(r.tutor.id)) TUTORS.push(adopt(r.tutor));
         state.signedIn = r.tutor.id;
@@ -2077,6 +2385,11 @@ document.addEventListener("input", e => {
     if(e.target.value && i < 5) document.querySelector(`[data-otp='${i+1}']`).focus();
   }
   if(e.target.id === "p-bio") document.getElementById("biocount").textContent = e.target.value.length;
+  if(e.target.id === "a-bank-sort"){
+    const d = e.target.value.replace(/\D/g, "").slice(0, 6);
+    e.target.value = d.replace(/(\d{2})(?=\d)/g, "$1-");
+  }
+  if(e.target.id === "a-bank-acc") e.target.value = e.target.value.replace(/\D/g, "").slice(0, 8);
 });
 
 document.addEventListener("keydown", e => {
@@ -2098,6 +2411,12 @@ document.getElementById("q").addEventListener("input", e => {
 overlay.addEventListener("click", e => { if(e.target === overlay) closeModal(); });
 
 /* ---------- start up ---------- */
+(() => {
+  const slot = document.getElementById("argand-anim");
+  const tpl = document.getElementById("argand-svg");
+  if(slot && tpl) slot.appendChild(tpl.content.cloneNode(true));
+})();
+
 main.innerHTML = `<div class="card card-pad"><div class="empty">Loading…</div></div>`;
 (async () => {
   if(!ONLINE){
@@ -2125,10 +2444,15 @@ main.innerHTML = `<div class="card card-pad"><div class="empty">Loading…</div>
     if(saved){
       state.token = saved;
       try {
-        const me = await api("/api/me");
-        if(!tutor(me.id)) TUTORS.push(adopt(me));
-        state.signedIn = me.id;
-      } catch { state.token = null; store.clear("argand_token"); }
+        if(store.get("argand_role") === "admin"){
+          await api("/api/admin/overview");
+          state.isAdmin = true;
+        } else {
+          const me = await api("/api/me");
+          if(!tutor(me.id)) TUTORS.push(adopt(me));
+          state.signedIn = me.id;
+        }
+      } catch { state.token = null; store.clear("argand_token"); store.clear("argand_role"); }
     }
   } catch (err) {
     main.innerHTML = `<div class="card"><div class="card-head">Can't reach the server</div>
