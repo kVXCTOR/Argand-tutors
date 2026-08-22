@@ -466,7 +466,8 @@ function adopt(t) {
     id: t.id, name: t.name, headline: t.headline || "", bio: t.bio || "",
     uni: t.university, course: t.course, year: t.year, sat: t.sat,
     grades: (t.grades || []).map(g => ({ s: g.subject, g: g.grade })),
-    subjects: t.subjectIds || [], premium: t.premium ?? 0, photo: t.photo || null,
+    subjects: t.subjectIds || [], premium: t.premium ?? 0, rates: t.rates || {},
+    phone: t.phone || "", email: t.email || "", photo: t.photo || null,
     avail, blocked: t.blocked || [], buffer: t.buffer ?? 15,
     hours: t.hours || 0, rating: t.rating || null, reviews: t.reviews || 0,
     said: t.said || [], colour: colourFor(t.name), busy: t.busy || []
@@ -492,7 +493,8 @@ async function loadTutors() {
 const state = {
   route:{name:"browse"}, level:"All", area:"All", query:"", tutorFilter:"All",
   dayIndex:0, slotHour:null, lengthMins:60,
-  step:null, name:"", email:"", rescheduleRef:null, signedIn:null, showPw:false, token:null,
+  step:null, name:"", email:"", phone:"", promo:"", promoPercent:0,
+  rescheduleRef:null, signedIn:null, showPw:false, token:null,
   repeat:1, waitHour:null, noteRef:null,
   applyStep:"form", applyId:null, applyCode:null, applyPicked:[], applyErr:""
 };
@@ -603,12 +605,17 @@ function addDays(d, n){ const x = new Date(d); x.setDate(x.getDate()+n); x.setHo
 function weekStrip(tutorId){
   return DAYS.slice(0,7).map(d => `<i class="${slotsFor(tutorId,d,60).some(s=>s.free)?"on":""}"></i>`).join("");
 }
+function hourlyFor(t, subjectId){
+  const own = t && t.rates ? t.rates[String(subjectId)] : undefined;
+  if(own !== undefined && own !== null && own !== "") return Number(own);
+  return subject(subjectId).price + (t ? t.premium : 0);
+}
 function priceFor(tutorId, subjectId, mins){
   const t = tutorId ? tutor(tutorId) : null;
-  const base = subject(subjectId).price + (t ? t.premium : 0);
+  const base = t ? hourlyFor(t, subjectId) : subject(subjectId).price;
   return Math.round(base * LENGTHS.find(l => l.mins === mins).mult * 100) / 100;
 }
-function fromPrice(t){ return Math.min(...t.subjects.map(id => subject(id).price + t.premium)); }
+function fromPrice(t){ return Math.min(...t.subjects.map(id => hourlyFor(t, id))); }
 function hoursUntil(b){ return (ukInstant(b.date, b.hour) - Date.now()) / 36e5; }
 const makeRef = () => "AR-" + Math.random().toString(36).slice(2,7).toUpperCase();
 
@@ -1334,21 +1341,34 @@ function viewEdit(){
             <input id="p-uni" value="${esc(t.uni)}"></div>
           <div class="field" style="width:150px;"><label for="p-course">Course</label>
             <input id="p-course" value="${esc(t.course)}"></div>
-          <div class="field" style="width:150px;"><label for="p-premium">Premium (£/hr)</label>
-            <input id="p-premium" type="number" min="0" max="30" step="1" value="${t.premium}">
-            <div class="hint">Added to each subject's base rate.</div></div>
+          <div class="field" style="flex:1 1 180px;"><label for="p-phone">Phone number</label>
+            <input id="p-phone" type="tel" value="${esc(t.phone || "")}" autocomplete="tel">
+            <div class="hint">Given to students after they book. Never public.</div></div>
         </div>
         <button class="btn btn-primary" id="savep">Save profile</button>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-head">What you charge<span class="sub">Base rate plus your premium</span></div>
-      ${t.subjects.map(id => `<div class="avrow">
-        <span style="flex:1;">${subject(id).name}</span>
-        <span class="muted">${money(subject(id).price)} + ${money(t.premium)}</span>
-        <b style="width:64px;text-align:right;">${money(priceFor(t.id, id, 60))}/hr</b>
-      </div>`).join("")}
+      <div class="card-head">What you charge<span class="sub">Per hour, your choice</span></div>
+      ${t.subjects.map(id => {
+        const own = t.rates[String(id)];
+        return `<div class="avrow">
+          <span style="flex:1 1 160px;min-width:0;">${subject(id).name}
+            <div class="hint" style="margin:0;">${own !== undefined && own !== "" ? "Your rate" : "Suggested " + money(subject(id).price + t.premium)}</div>
+          </span>
+          <span class="muted">£</span>
+          <input type="number" min="5" max="300" step="1" data-rate="${id}" value="${own !== undefined ? own : ""}"
+            placeholder="${subject(id).price + t.premium}"
+            style="width:84px;height:34px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:15px;">
+          <span class="muted" style="width:34px;">/hr</span>
+        </div>`;
+      }).join("")}
+      <div class="card-pad" style="border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" id="save-rates">Save prices</button>
+        <button class="btn btn-ghost btn-sm" id="reset-rates">Reset to suggested</button>
+        <span class="hint" style="margin:0;">30-minute sessions are 60% of this, 90-minute are 145%.</span>
+      </div>
     </div>
 
     <div class="card">
@@ -1371,7 +1391,7 @@ function viewEdit(){
 /* ============================================================
    TUTOR APPLICATIONS — owner-approved account creation
    ============================================================ */
-state.applyForm = {name:"", email:"", pw:"", uni:"", course:"", year:"Second year", bio:"",
+state.applyForm = {name:"", email:"", pw:"", uni:"", course:"", year:"Second year", bio:"", phone:"",
                    grades:[{s:"",g:"A*"},{s:"",g:"A"},{s:"",g:"A"}]};
 
 function readApplyForm(){
@@ -1379,7 +1399,7 @@ function readApplyForm(){
   if(!g("a-name")) return;
   f.name = g("a-name").value; f.email = g("a-email").value; f.pw = g("a-pw").value;
   f.uni = g("a-uni").value; f.course = g("a-course").value; f.year = g("a-year").value;
-  f.bio = g("a-bio").value;
+  f.bio = g("a-bio").value; f.phone = g("a-phone") ? g("a-phone").value : "";
   f.grades = [0,1,2].map(i => ({s:g("a-gs"+i).value, g:g("a-gg"+i).value}));
 }
 
@@ -1442,6 +1462,11 @@ function viewApply(){
               <input id="a-course" value="${esc(f.course)}">
               <div class="err">Tell us what you study.</div></div>
           </div>
+
+          <div class="field" id="fa-phone"><label for="a-phone">Phone number</label>
+            <input id="a-phone" type="tel" value="${esc(f.phone || "")}" autocomplete="tel" placeholder="07…">
+            <div class="hint">Shared with students once they've booked you, never shown publicly.</div>
+            <div class="err">Enter a phone number we can reach you on.</div></div>
 
           <div class="field"><label for="a-year">Year of study</label>
             <select id="a-year" style="width:100%;height:40px;border:1px solid var(--ink-2);border-radius:4px;padding:0 8px;background:#fff;font-size:16px;">
@@ -1568,15 +1593,17 @@ async function requestHold(){
   currentHold = await api("/api/holds", {method:"POST", body:{
     tutorId: state.route.tutorId, subjectId: state.route.subjectId,
     mins: state.lengthMins, day: iso(d), hour: state.slotHour,
-    repeat: state.repeat, name: state.name, email: state.email
+    repeat: state.repeat, name: state.name, email: state.email,
+    phone: state.phone, promo: state.promoPercent ? state.promo : ""
   }});
   sendCode();
   return currentHold;
 }
 function blockDiscount(n){ return n >= 4 ? 0.9 : 1; }
+function promoMult(){ return state.promoPercent ? (100 - state.promoPercent) / 100 : 1; }
 function orderTotal(){
   const per = priceFor(state.route.tutorId, state.route.subjectId, state.lengthMins);
-  return Math.round(per * state.repeat * blockDiscount(state.repeat) * 100) / 100;
+  return Math.round(per * state.repeat * blockDiscount(state.repeat) * promoMult() * 100) / 100;
 }
 function recapHtml(){
   const t = tutor(state.route.tutorId), s = subject(state.route.subjectId), d = DAYS[state.dayIndex];
@@ -1590,6 +1617,7 @@ function recapHtml(){
     ${n>1 ? `<div class="recap-row"><span>Sessions</span><b>${n}, weekly at the same time</b></div>
              <div class="recap-row"><span>${money(per)} each</span><b>${money(per*n)}</b></div>` : ""}
     ${disc ? `<div class="recap-row" style="color:var(--green);"><span>Block booking discount</span><b style="color:var(--green);">&minus;10%</b></div>` : ""}
+    ${state.promoPercent ? `<div class="recap-row" style="color:var(--green);"><span>Promo ${esc(state.promo)}</span><b style="color:var(--green);">&minus;${state.promoPercent}%</b></div>` : ""}
     <div class="recap-row recap-total"><span>Total</span><b>${money(orderTotal())}</b></div>
   </div><div class="timer" id="hold">Slot held for <b>5:00</b></div>`;
 }
@@ -1604,6 +1632,20 @@ function drawModal(){
       <div class="field" id="f-email"><label for="i-email">Email address</label>
         <input id="i-email" type="email" value="${esc(state.email)}" autocomplete="email">
         <div class="err">Enter a valid email address so we can send your confirmation.</div></div>
+      <div class="field"><label for="i-phone">Phone number <span style="color:var(--ink-3);font-weight:400;">(optional)</span></label>
+        <input id="i-phone" type="tel" value="${esc(state.phone)}" autocomplete="tel" placeholder="07…">
+        <div class="hint">Shared with your tutor so they can reach you about the session.</div></div>
+
+      <div class="field" id="f-promo"><label for="i-promo">Promo code</label>
+        <div style="display:flex;gap:8px;">
+          <input id="i-promo" value="${esc(state.promo)}" placeholder="If you have one"
+            style="text-transform:uppercase;" autocapitalize="characters" spellcheck="false">
+          <button class="btn btn-outline" id="apply-promo" style="flex:none;">Apply</button>
+        </div>
+        <div class="hint" id="promo-msg">${state.promoPercent
+          ? `<span style="color:var(--green);font-weight:600;">${esc(state.promo)} applied — ${state.promoPercent}% off</span>`
+          : ""}</div>
+        <div class="err">That code isn't recognised.</div></div>
       <div class="field"><label>Repeat weekly</label>
         <div class="seg">
           ${[[1,"One session","just this time"],[4,"4 weeks","save 10%"],[8,"8 weeks","save 10%"]].map(([n,a,b2]) =>
@@ -1756,7 +1798,7 @@ document.addEventListener("click", e => {
   }
 
   if(e.target.id === "go"){
-    state.repeat = 1;
+    state.repeat = 1; state.promo = ""; state.promoPercent = 0;
     if(state.rescheduleRef){
       const b = BOOKINGS.find(x => x.ref === state.rescheduleRef);
       const blocks = LENGTHS.find(l => l.mins === b.mins).blocks;
@@ -1818,6 +1860,7 @@ document.addEventListener("click", e => {
     setErr("fa-course", !f.course.trim());
     setErr("fa-subjects", state.applyPicked.length === 0);
     setErr("fa-bio", f.bio.trim().length < 20);
+    setErr("fa-phone", f.phone.replace(/\D/g, "").length < 7);
     const named = f.grades.filter(g => g.s.trim());
     setErr("fa-grades", !named.length || !named.some(g => g.g === "A*"));
     if(bad.length){ document.getElementById(bad[0])?.scrollIntoView?.({block:"center"}); return; }
@@ -1825,7 +1868,7 @@ document.addEventListener("click", e => {
     e.target.disabled = true; e.target.textContent = "Submitting…";
     postApplication({
       name:f.name.trim(), email:f.email.trim().toLowerCase(), password:f.pw,
-      university:f.uni.trim(), course:f.course.trim(), year:f.year,
+      university:f.uni.trim(), course:f.course.trim(), year:f.year, phone:f.phone.trim(),
       grades:named.map(g => ({subject:g.s.trim(), grade:g.g})),
       subjectIds:state.applyPicked.slice(),
       subjectNames:state.applyPicked.map(id => subject(id).name),
@@ -1854,6 +1897,43 @@ document.addEventListener("click", e => {
     return;
   }
 
+  if(e.target.id === "apply-promo"){
+    const box = document.getElementById("i-promo");
+    const code = box.value.trim().toUpperCase();
+    const msg = document.getElementById("promo-msg");
+    const field = document.getElementById("f-promo");
+    if(!code){ state.promo = ""; state.promoPercent = 0; field.classList.remove("has-err"); msg.innerHTML = ""; return drawModal(); }
+    e.target.disabled = true;
+    api("/api/promo", {method:"POST", body:{code}})
+      .then(r => {
+        state.promo = r.label; state.promoPercent = r.percent;
+        toast(`${r.label} applied — ${r.percent}% off.`);
+        drawModal();
+      })
+      .catch(() => {
+        state.promo = code; state.promoPercent = 0;   // keep what they typed, drop the discount
+        drawModal();                                   // redraw so the total is right again
+        const f2 = document.getElementById("f-promo");
+        const m2 = document.getElementById("promo-msg");
+        if(f2) f2.classList.add("has-err");
+        if(m2) m2.innerHTML = "";
+      });
+    return;
+  }
+  if(e.target.id === "save-rates"){
+    const t = tutor(state.signedIn), rates = {};
+    document.querySelectorAll("[data-rate]").forEach(inp => {
+      const v = inp.value.trim();
+      if(v !== "") rates[inp.dataset.rate] = Math.max(5, Math.min(300, +v || 0));
+    });
+    t.rates = rates;
+    e.target.disabled = true; e.target.textContent = "Saving…";
+    return saveMe({rates}, "Prices saved. They're live on your profile now.");
+  }
+  if(e.target.id === "reset-rates"){
+    tutor(state.signedIn).rates = {};
+    return saveMe({rates:{}}, "Back to the suggested prices.");
+  }
   if(e.target.id === "resend"){
     e.target.disabled = true;
     requestHold().then(() => { toast("New code sent."); drawModal(); }).catch(err => toast(err.message));
@@ -1899,10 +1979,10 @@ document.addEventListener("click", e => {
     t.bio = document.getElementById("p-bio").value.trim() || t.bio;
     t.uni = document.getElementById("p-uni").value.trim() || t.uni;
     t.course = document.getElementById("p-course").value.trim() || t.course;
-    t.premium = Math.max(0, Math.min(30, +document.getElementById("p-premium").value || 0));
+    t.phone = document.getElementById("p-phone").value.trim();
     e.target.disabled = true; e.target.textContent = "Saving…";
-    return saveMe({headline:t.headline, bio:t.bio, university:t.uni, course:t.course, premium:t.premium},
-      "Profile saved. Your public page and prices are updated.");
+    return saveMe({headline:t.headline, bio:t.bio, university:t.uni, course:t.course, phone:t.phone},
+      "Profile saved.");
   }
 
   if(e.target.id === "next"){
@@ -1914,6 +1994,8 @@ document.addEventListener("click", e => {
       document.getElementById("f-email").classList.toggle("has-err", !okMail);
       if(!okName || !okMail) return;
       state.name = name; state.email = email;
+      const ph = document.getElementById("i-phone");
+      state.phone = ph ? ph.value.trim() : "";
       e.target.disabled = true; e.target.textContent = "Sending code…";
       requestHold()
         .then(() => { state.step = "otp"; drawModal(); })

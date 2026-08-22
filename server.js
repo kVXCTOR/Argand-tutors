@@ -11,7 +11,7 @@ const crypto = require("crypto");
 const PORT = process.env.PORT || 3000;
 // Where tutor applications and approval codes are sent.
 // Override with an OWNER_EMAIL environment variable when you deploy.
-const OWNER_EMAIL = process.env.OWNER_EMAIL || "victorkolawole2008@gmail.com";
+const OWNER_EMAIL = process.env.OWNER_EMAIL || "argandtutors@gmail.com";
 // onboarding@resend.dev works straight away with no domain setup.
 // Swap to noreply@yourdomain once you have verified the domain with Resend.
 const FROM_EMAIL = process.env.FROM_EMAIL || "Argand Tutors <onboarding@resend.dev>";
@@ -106,6 +106,7 @@ function ownerEmailBody(app) {
       <tr><td style="padding:4px 12px 4px 0;color:#555">Course</td><td>${esc(app.course)}, ${esc(app.year)}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#555;vertical-align:top">A-Levels</td><td>${grades}</td></tr>
       <tr><td style="padding:4px 12px 4px 0;color:#555;vertical-align:top">Would teach</td><td>${app.subjectNames.map(esc).join("<br>")}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#555">Phone</td><td>${app.phone ? esc(app.phone) : "not given"}</td></tr>
     </table>
     <p style="font-family:system-ui;font-size:14px;white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:6px">${esc(app.bio)}</p>
     <p style="font-family:system-ui">If you're happy to take them on, give them this confirmation code:</p>
@@ -180,6 +181,7 @@ async function createApplication(req, res, ip) {
     subjectIds: b.subjectIds,
     subjectNames: b.subjectNames || [],
     bio: String(b.bio).trim(),
+    phone: clean(b.phone, 32),
     code: sixDigits(),
     approveToken: crypto.randomBytes(24).toString("hex"),
     attempts: 0,
@@ -193,8 +195,12 @@ async function createApplication(req, res, ip) {
   try {
     await sendEmail(OWNER_EMAIL, `Tutor application — ${app.name} (${app.university})`, ownerEmailBody(app));
   } catch (err) {
-    console.error("Owner email failed:", err.message);
-    // the application is still recorded; the owner can read it from data.json
+    console.error("\n  ####  COULD NOT EMAIL YOU THE APPLICATION  ####");
+    console.error("  Reason: " + err.message);
+    console.error("  Applicant: " + app.name + " <" + app.email + ">");
+    console.error("  Their approval code is: " + app.code);
+    console.error("  Nothing is lost - send them that code and their account activates.");
+    console.error("  ###############################################\n");
   }
 
   json(res, 201, { id: app.id, status: "pending" });
@@ -233,6 +239,8 @@ async function verifyApplication(req, res, id, ip) {
     sat: new Date().getFullYear(),
     hours: 0,
     premium: 3,
+    rates: {},
+    phone: app.phone || "",
     photo: null,
     availability: {},
     blocked: [],
@@ -276,7 +284,7 @@ async function login(req, res, ip) {
   const token = crypto.randomBytes(24).toString("hex");
   t.session = { token, expires: Date.now() + 7 * 864e5 };
   save(db);
-  json(res, 200, { token, tutor: publicTutor(t) });
+  json(res, 200, { token, tutor: { ...publicTutor(t), phone: t.phone || "", email: t.email } });
 }
 
 
@@ -303,6 +311,19 @@ const SUBJECTS = [
 ];
 const LENGTHS = [{mins:30,mult:0.6,blocks:1},{mins:60,mult:1,blocks:1},{mins:90,mult:1.45,blocks:2}];
 const subjectById = id => SUBJECTS.find(s => s.id === Number(id));
+
+/* Promo codes. Add more by copying a line. `percent` is the discount.
+   Set `expires` to an ISO date string to make one temporary. */
+const PROMOS = {
+  EPSILON: { percent: 20, label: "EPSILON", expires: null }
+};
+function lookupPromo(code) {
+  if (!code) return null;
+  const p = PROMOS[String(code).trim().toUpperCase()];
+  if (!p) return null;
+  if (p.expires && new Date(p.expires) < new Date()) return null;
+  return p;
+}
 
 // Card payments stay off until Stripe is wired in. Bookings are still real sessions;
 // you invoice separately. Better than a "Pay now" button on a live site that takes nothing.
@@ -348,13 +369,20 @@ function slotFree(t, isoDay, hour, mins) {
   return true;
 }
 
+// A tutor's own rate for a subject wins. Otherwise it's the subject's base
+// price plus their premium, which is what a brand-new tutor starts on.
+function hourlyFor(t, subjectId) {
+  const own = (t.rates || {})[String(subjectId)];
+  if (own !== undefined && own !== null && own !== "") return Number(own);
+  return subjectById(subjectId).price + (t.premium || 0);
+}
 const priceFor = (t, subjectId, mins) =>
-  Math.round((subjectById(subjectId).price + (t.premium || 0)) * LENGTHS.find(l => l.mins === Number(mins)).mult * 100) / 100;
+  Math.round(hourlyFor(t, subjectId) * LENGTHS.find(l => l.mins === Number(mins)).mult * 100) / 100;
 
 const publicTutor = t => ({
   id: t.id, name: t.name, headline: t.headline, bio: t.bio,
   university: t.university, course: t.course, year: t.year, sat: t.sat,
-  grades: t.grades, subjectIds: t.subjectIds, premium: t.premium, photo: t.photo,
+  grades: t.grades, subjectIds: t.subjectIds, premium: t.premium, rates: t.rates || {}, photo: t.photo,
   availability: t.availability || {}, blocked: t.blocked || [], buffer: t.buffer ?? 15,
   hours: t.hours || 0, busy: busyHours(t.id)
 });
@@ -366,6 +394,16 @@ async function updateMe(req, res, t) {
   if (b.university !== undefined) t.university = clean(b.university, 80);
   if (b.course !== undefined) t.course = clean(b.course, 80);
   if (b.premium !== undefined) t.premium = Math.max(0, Math.min(30, Number(b.premium) || 0));
+  if (b.phone !== undefined) t.phone = clean(b.phone, 32);
+  if (b.rates && typeof b.rates === "object") {
+    const next = {};
+    for (const [k, v] of Object.entries(b.rates)) {
+      if (!subjectById(k)) continue;
+      if (v === null || v === "") continue;
+      next[k] = Math.max(5, Math.min(300, Number(v) || 0));
+    }
+    t.rates = next;
+  }
   if (b.buffer !== undefined && [0, 15, 30].includes(Number(b.buffer))) t.buffer = Number(b.buffer);
   if (b.photo !== undefined) {
     if (b.photo === null) t.photo = null;
@@ -490,12 +528,21 @@ async function createHold(req, res, ip) {
   }
   if (!days.length) return json(res, 409, { error: "That time has just been taken. Please choose another." });
 
-  const per = priceFor(t, sj.id, len.mins), disc = days.length >= 4 ? 0.9 : 1;
+  const promo = lookupPromo(b.promo);
+  if (b.promo && !promo) return json(res, 400, { error: "That promo code isn't valid." });
+  const per = priceFor(t, sj.id, len.mins);
+  const disc = days.length >= 4 ? 0.9 : 1;
+  const promoMult = promo ? (100 - promo.percent) / 100 : 1;
   const hold = {
     id: crypto.randomUUID(), tutorId: t.id, subjectId: sj.id, mins: len.mins, hour: Number(b.hour),
     days, skipped, name: clean(b.name, 80), email: clean(b.email).toLowerCase(),
-    perSession: Math.round(per * disc * 100) / 100,
-    total: Math.round(per * days.length * disc * 100) / 100,
+    phone: clean(b.phone, 32),
+    listPrice: per,
+    blockDiscount: disc < 1,
+    promo: promo ? promo.label : null,
+    promoPercent: promo ? promo.percent : 0,
+    perSession: Math.round(per * disc * promoMult * 100) / 100,
+    total: Math.round(per * days.length * disc * promoMult * 100) / 100,
     code: sixDigits(), attempts: 0, expires: Date.now() + 15 * 6e4
   };
   db.holds.push(hold); save(db);
@@ -503,9 +550,17 @@ async function createHold(req, res, ip) {
   sendEmail(hold.email, "Your " + BRAND + " verification code", wrap(
     `<p>Your code is</p><p style="font-family:ui-monospace,monospace;font-size:32px;letter-spacing:6px;font-weight:700">${hold.code}</p>
      <p style="font-size:13px;color:#555">It expires in 15 minutes. If this wasn't you, ignore it \u2014 nothing has been booked.</p>`)
-  ).catch(e => console.error("Code email failed:", e.message));
+  ).catch(e => {
+    console.error("\n  ####  COULD NOT EMAIL THE CUSTOMER THEIR CODE  ####");
+    console.error("  Reason: " + e.message);
+    console.error("  Customer: " + hold.email);
+    console.error("  Their code is: " + hold.code);
+    console.error("  ###################################################\n");
+  });
 
-  json(res, 201, { holdId: hold.id, total: hold.total, perSession: hold.perSession, sessions: days.length, skipped });
+  json(res, 201, { holdId: hold.id, total: hold.total, perSession: hold.perSession,
+    listPrice: hold.listPrice, sessions: days.length, skipped,
+    blockDiscount: hold.blockDiscount, promo: hold.promo, promoPercent: hold.promoPercent });
 }
 
 async function confirmHold(req, res) {
@@ -535,7 +590,8 @@ function finaliseBooking(res, hold, pay) {
       ref: "AR-" + crypto.randomBytes(3).toString("hex").toUpperCase(),
       manageToken: crypto.randomBytes(20).toString("hex"),
       tutorId: t.id, subjectId: sj.id, day: iso, hour: hold.hour, mins: hold.mins,
-      price: hold.perSession, name: hold.name, email: hold.email,
+      price: hold.perSession, name: hold.name, email: hold.email, phone: hold.phone || "",
+      promo: hold.promo || null,
       status: "confirmed", note: null,
       paid: !!pay.paid, checkoutSessionId: pay.sessionId || null, paymentIntent: pay.paymentIntent || null,
       remind24: false, remind1: false, createdAt: new Date().toISOString()
@@ -547,20 +603,48 @@ function finaliseBooking(res, hold, pay) {
   const f = made[0];
   const when = x => new Date(x.day + "T12:00:00Z").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })
                     + " at " + String(x.hour).padStart(2, "0") + ":00";
+  const contactBox = (title, rows) => `<table style="font-size:14px;border-collapse:collapse;margin:4px 0 14px">
+     <tr><td colspan="2" style="padding:6px 0 2px;font-weight:600">${title}</td></tr>
+     ${rows.filter(Boolean).map(([k, v]) => `<tr><td style="padding:2px 14px 2px 0;color:#666">${k}</td><td>${v}</td></tr>`).join("")}
+   </table>`;
+  const tutorBoxFor = title => contactBox(title, [
+    ["Name", esc(t.name)],
+    ["Email", `<a href="mailto:${esc(t.email)}">${esc(t.email)}</a>`],
+    t.phone ? ["Phone", esc(t.phone)] : null,
+    ["Studying", esc(t.course) + ", " + esc(t.university)]
+  ]);
+  const tutorBox = tutorBoxFor("Your tutor");
+  const clientBox = contactBox("Your student", [
+    ["Name", esc(f.name)],
+    ["Email", `<a href="mailto:${esc(f.email)}">${esc(f.email)}</a>`],
+    f.phone ? ["Phone", esc(f.phone)] : ["Phone", "not given"]
+  ]);
+
   sendEmail(f.email, "Booking confirmed \u2014 " + sj.name + " with " + t.name, wrap(
     `<h2 style="font-size:19px;margin:0 0 12px">You're booked in</h2>
      <p>${esc(sj.name)} with ${esc(t.name)}${made.length > 1 ? ", " + made.length + " weekly sessions starting" : ","} ${when(f)}.</p>
-     <p>Reference <b>${f.ref}</b> \u00b7 ${hold.mins} minutes \u00b7 ${money(f.price)}${made.length > 1 ? " per session" : ""}</p>
+     <p>Reference <b>${f.ref}</b> \u00b7 ${hold.mins} minutes \u00b7 ${money(f.price)}${made.length > 1 ? " per session" : ""}
+     ${hold.promo ? `<br><span style="color:#0f766e">Promo ${esc(hold.promo)} applied \u2014 ${hold.promoPercent}% off</span>` : ""}</p>
+     ${tutorBox}
+     ${clientBox}
      ${pay.paid
        ? `<p style="font-size:13px;color:#555">Paid by card \u2014 ${money(hold.total)} in total. Your card statement will show ${esc(BRAND)}.</p>`
        : `<p style="font-size:13px;color:#555">${esc(t.name.split(" ")[0])} will arrange payment with you directly before the first session.</p>`}
      <p><a href="${PUBLIC_URL}/#/manage/${f.manageToken}">Manage or cancel this booking</a></p>
-     <p style="font-size:13px;color:#555">Free to move or cancel up to 24 hours before.</p>`)
+     <p style="font-size:13px;color:#555">Free to cancel up to 24 hours before, using the link above.</p>`)
   ).catch(e => console.error(e.message));
 
-  sendEmail(t.email, "New booking \u2014 " + sj.name + ", " + when(f), wrap(
-    `<p><b>${esc(f.name)}</b> has booked ${esc(sj.name)}${made.length > 1 ? " (" + made.length + " weekly sessions)" : ""}.</p>
-     <p>${when(f)} \u00b7 ${hold.mins} minutes<br>${esc(f.email)}</p>
+  sendEmail(t.email, "New booking \u2014 " + sj.name + " with " + f.name + ", " + when(f), wrap(
+    `<h2 style="font-size:19px;margin:0 0 12px">You have a new booking</h2>
+     <p><b>${esc(f.name)}</b> has booked ${esc(sj.name)}${made.length > 1 ? " \u2014 " + made.length + " weekly sessions" : ""}.</p>
+     <p>${when(f)} \u00b7 ${hold.mins} minutes \u00b7 ${money(f.price)}${made.length > 1 ? " per session" : ""}
+     ${made.length > 1 ? `<br><span style="color:#666">All dates: ${made.map(x => x.day).join(", ")}</span>` : ""}
+     ${hold.promo ? `<br><span style="color:#0f766e">Promo ${esc(hold.promo)} applied \u2014 ${hold.promoPercent}% off</span>` : ""}</p>
+     ${clientBox}
+     ${tutorBoxFor("Your details, as the student sees them")}
+     ${PAYMENTS_ENABLED && pay.paid
+        ? `<p style="font-size:13px;color:#555">Paid by card. Nothing to collect.</p>`
+        : `<p style="font-size:13px;color:#555">Payment hasn't been taken by the site \u2014 arrange it with ${esc(f.name.split(" ")[0])} directly.</p>`}
      <p><a href="${PUBLIC_URL}/#/staff">Open your dashboard</a></p>`)
   ).catch(e => console.error(e.message));
 
@@ -721,10 +805,17 @@ const server = http.createServer(async (req, res) => {
     if ((mm2 = p.match(/^\/api\/holds\/([^/]+)\/complete\/([^/]+)$/)) && req.method === "POST")
       return await completeCheckout(req, res, mm2[1], mm2[2]);
     if (p === "/api/waitlist" && req.method === "POST") return await joinWaitlist(req, res, ip);
+    if (p === "/api/promo" && req.method === "POST") {
+      if (!rateLimit(ip, "promo", 40, 36e5)) return json(res, 429, { error: "Too many attempts." });
+      const pc = lookupPromo((await readBody(req)).code);
+      return pc ? json(res, 200, { valid: true, percent: pc.percent, label: pc.label })
+                : json(res, 404, { valid: false, error: "That code isn't recognised." });
+    }
     if (p === "/api/me" || p === "/api/me/bookings") {
       const me = currentTutor(req);
       if (!me) return json(res, 401, { error: "Please sign in again." });
-      if (p === "/api/me" && req.method === "GET") return json(res, 200, publicTutor(me));
+      if (p === "/api/me" && req.method === "GET")
+        return json(res, 200, { ...publicTutor(me), phone: me.phone || "", email: me.email });
       if (p === "/api/me" && req.method === "PATCH") return await updateMe(req, res, me);
       if (p === "/api/me/bookings" && req.method === "GET") return json(res, 200, {
         bookings: db.bookings.filter(x => x.tutorId === me.id).map(x => ({ ...x, manageToken: undefined })),
@@ -803,7 +894,9 @@ if (process.argv.includes("--test-email")) {
 
 server.listen(PORT, () => {
   console.log(`\nArgand Tutors running at ${PUBLIC_URL}`);
-  console.log(`Owner email:  ${OWNER_EMAIL}`);
+  console.log(`Owner email:  ${OWNER_EMAIL}   (applications and approval codes go here)`);
+  if (BREVO_API_KEY) console.log(`Sending from: ${process.env.BREVO_SENDER || OWNER_EMAIL}   (must be verified in Brevo)`);
+  else if (RESEND_API_KEY) console.log(`Sending from: ${FROM_EMAIL}`);
   console.log(`Sending mail: ${BREVO_API_KEY ? "yes, via Brevo" : RESEND_API_KEY ? "yes, via Resend" : "no — codes will be printed to this console"}`);
   console.log(`Card payments: ${PAYMENTS_ENABLED ? "on, via Stripe" + (STRIPE_SECRET_KEY.startsWith("sk_test") ? " (TEST MODE \u2014 no real money)" : " (LIVE)") : "off \u2014 bookings are taken, you invoice separately"}`);
   console.log(`Data file:    ${DB_PATH}`);
