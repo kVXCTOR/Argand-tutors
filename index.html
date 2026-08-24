@@ -107,8 +107,16 @@ select{font-family:inherit;font-size:13px;}
 .page{max-width:1128px;margin:0 auto;padding:24px 16px 64px;display:grid;grid-template-columns:300px minmax(0,1fr) 225px;gap:24px;align-items:start;}
 .page.is-narrow{grid-template-columns:minmax(0,1fr);max-width:440px;}
 .page.is-narrow .rail-info,.page.is-narrow .rail-account{display:none;}
-@media (max-width:1100px){.page{grid-template-columns:270px minmax(0,1fr);}.rail-account{display:none;}}
-@media (max-width:860px){.page{grid-template-columns:minmax(0,1fr);gap:16px;}.rail-info{position:static;order:2;}}
+@media (max-width:1100px){
+  .page{grid-template-columns:260px minmax(0,1fr);}
+  /* the account panel drops below the content rather than disappearing */
+  .rail-account{grid-column:1 / -1;order:3;position:static;max-width:430px;margin:0 auto;width:100%;}
+}
+@media (max-width:860px){
+  .page{grid-template-columns:minmax(0,1fr);gap:16px;}
+  .rail-info{position:static;order:2;}
+  .rail-account{order:3;max-width:none;}
+}
 @media (max-width:640px){.page{padding:12px 10px 48px;}}
 .rail-info,.rail-account{position:sticky;top:calc(var(--nav-h) + 24px);}
 
@@ -586,6 +594,8 @@ const fmtDate = d => `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMont
 const stars = n => "★".repeat(n) + "☆".repeat(5-n);
 const accent = a => AREA_COLOUR[a] || "#0a66c2";
 
+const GUEST_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" style="width:58%;height:58%;fill:rgba(255,255,255,.92);">
+  <path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-5 0-9 2.5-9 5.5V22h18v-2.5c0-3-4-5.5-9-5.5z"/></svg>`;
 function avatarHtml(t, size, ring){
   const cls = `avatar avatar-${size}${ring ? " avatar-ring" : ""}`;
   return t.photo
@@ -790,7 +800,7 @@ function rails(){
   const t = state.signedIn ? tutor(state.signedIn) : null;
   document.getElementById("rail-avatar").innerHTML = t
     ? avatarHtml(t, "lg", true)
-    : `<div class="avatar avatar-lg avatar-ring" style="background:#8c6d4f;">G</div>`;
+    : `<div class="avatar avatar-lg avatar-ring" style="background:#6b7280;">${GUEST_ICON}</div>`;
   document.getElementById("rail-name").textContent = state.isAdmin ? "Argand Admin" : t ? t.name : "Booking as a guest";
   document.getElementById("rail-sub").textContent = state.isAdmin ? "Owner account" : t ? "Signed in as a tutor" : "Book without an account";
   document.getElementById("rail-links").innerHTML = state.isAdmin

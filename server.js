@@ -247,8 +247,8 @@ async function createApplication(req, res, ip) {
   if (errors.length) return json(res, 400, { error: "Some details are missing or invalid.", fields: errors });
 
   const email = String(b.email).trim().toLowerCase();
-  if (db.tutors.some(t => t.email === email))
-    return json(res, 409, { error: "There's already an account with that email." });
+  if (db.tutors.some(t => t.email === email && t.active))
+    return json(res, 409, { error: "There's already an account with that email. Sign in instead." });
 
   // a repeat application replaces the earlier pending one rather than stacking up
   db.applications = db.applications.filter(a => !(a.email === email && a.status === "pending"));
@@ -314,6 +314,22 @@ async function verifyApplication(req, res, id, ip) {
   }
 
   app.status = "approved";
+  const returning = db.tutors.find(x => x.email === app.email);
+  if (returning) {
+    Object.assign(returning, {
+      name: app.name, passwordHash: app.passwordHash, university: app.university,
+      course: app.course, year: app.year, grades: app.grades, subjectIds: app.subjectIds,
+      bio: app.bio, phone: app.phone || returning.phone, bank: app.bank || returning.bank,
+      active: true, session: null, reactivatedAt: new Date().toISOString()
+    });
+    save(db);
+    sendEmail(app.email, "Your " + BRAND + " account is active again", wrap(
+      `<p>Hi ${esc(app.name.split(" ")[0])}, your account has been reinstated.</p>
+       <p>Your past sessions and earnings history are still there. Check your availability is
+       right before students start booking.</p>
+       ${emailButton(PUBLIC_URL + "/#/staff", "Sign in")}`)).catch(e => console.error(e.message));
+    return json(res, 200, { status: "approved", reactivated: true });
+  }
   db.tutors.push({
     id: crypto.randomUUID(),
     name: app.name,
