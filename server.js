@@ -448,6 +448,11 @@ function lookupPromo(code) {
 // Card payments stay off until Stripe is wired in. Bookings are still real sessions;
 // you invoice separately. Better than a "Pay now" button on a live site that takes nothing.
 const PAYMENTS_ENABLED = !!STRIPE_SECRET_KEY;
+
+// Customers are not asked to verify their email by default — an extra step
+// before paying loses bookings. Set VERIFY_CUSTOMER_EMAIL=true to switch it
+// back on if you start getting junk bookings.
+const VERIFY_EMAIL = String(process.env.VERIFY_CUSTOMER_EMAIL || "").toLowerCase() === "true";
 const BRAND = process.env.BRAND || "Argand Tutors";
 
 const clean = (v, max = 500) => String(v ?? "").trim().slice(0, max);
@@ -745,7 +750,7 @@ async function createHold(req, res, ip) {
   };
   db.holds.push(hold); save(db);
 
-  sendEmail(hold.email, "Your " + BRAND + " verification code", wrap(
+  if (VERIFY_EMAIL) sendEmail(hold.email, "Your " + BRAND + " verification code", wrap(
     `<h2 style="font-size:19px;margin:0 0 6px;">Confirm your email</h2>
      <p style="margin:0 0 4px;color:#555;">Enter this code to finish booking:</p>
      ${codeBlock(hold.code)}
@@ -759,7 +764,7 @@ async function createHold(req, res, ip) {
   });
 
   json(res, 201, { holdId: hold.id, total: hold.total, perSession: hold.perSession,
-    listPrice: hold.listPrice, sessions: days.length, skipped,
+    listPrice: hold.listPrice, sessions: days.length, skipped, verifyEmail: VERIFY_EMAIL,
     blockDiscount: hold.blockDiscount, promo: hold.promo, promoPercent: hold.promoPercent });
 }
 
@@ -768,8 +773,8 @@ async function confirmHold(req, res) {
   const hold = db.holds.find(h => h.id === b.holdId);
   if (!hold) return json(res, 404, { error: "That booking attempt has expired. Please start again." });
   if (hold.expires < Date.now()) return json(res, 410, { error: "Your held slot expired. Please start again." });
-  if (hold.attempts >= 5) return json(res, 429, { error: "Too many wrong codes. Please start again." });
-  if (String(b.code) !== hold.code) {
+  if (VERIFY_EMAIL && hold.attempts >= 5) return json(res, 429, { error: "Too many wrong codes. Please start again." });
+  if (VERIFY_EMAIL && String(b.code) !== hold.code) {
     hold.attempts++; save(db);
     return json(res, 401, { error: "That code isn't right.", attemptsLeft: 5 - hold.attempts });
   }
@@ -998,7 +1003,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, db.tutors.filter(t => t.active).map(publicTutor));
     if (p === "/api/config")
       return json(res, 200, { brand: BRAND, subjects: SUBJECTS, lengths: LENGTHS,
-        paymentsEnabled: PAYMENTS_ENABLED, contactEmail: CONTACT_EMAIL });
+        paymentsEnabled: PAYMENTS_ENABLED, verifyEmail: VERIFY_EMAIL, contactEmail: CONTACT_EMAIL });
     if (p === "/api/holds" && req.method === "POST") return await createHold(req, res, ip);
     if (p === "/api/holds/confirm" && req.method === "POST") return await confirmHold(req, res);
     if ((mm2 = p.match(/^\/api\/holds\/([^/]+)\/checkout$/)) && req.method === "POST")
@@ -1271,6 +1276,7 @@ server.listen(PORT, () => {
   if (BREVO_API_KEY) console.log(`Sending from: ${process.env.BREVO_SENDER || OWNER_EMAIL}   (must be verified in Brevo)`);
   else if (RESEND_API_KEY) console.log(`Sending from: ${FROM_EMAIL}`);
   console.log(`Sending mail: ${BREVO_API_KEY ? "yes, via Brevo" : RESEND_API_KEY ? "yes, via Resend" : "no — codes will be printed to this console"}`);
+  console.log(`Email checks: ${VERIFY_EMAIL ? "customers must enter a code" : "off — customers book without a code"}`);
   console.log(`Card payments: ${PAYMENTS_ENABLED ? "on, via Stripe" + (STRIPE_SECRET_KEY.startsWith("sk_test") ? " (TEST MODE \u2014 no real money)" : " (LIVE)") : "off \u2014 bookings are taken, you invoice separately"}`);
   console.log(`Data file:    ${DB_PATH}`);
   const admin = ensureAdmin();

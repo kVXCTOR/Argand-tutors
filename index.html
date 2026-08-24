@@ -107,18 +107,21 @@ select{font-family:inherit;font-size:13px;}
 .page{max-width:1128px;margin:0 auto;padding:24px 16px 64px;display:grid;grid-template-columns:300px minmax(0,1fr) 225px;gap:24px;align-items:start;}
 .page.is-narrow{grid-template-columns:minmax(0,1fr);max-width:440px;}
 .page.is-narrow .rail-info,.page.is-narrow .rail-account{display:none;}
+/* Below the point where three columns fit, everything becomes one column in
+   reading order and the page simply gets taller. Nothing is hidden, nothing
+   is pinned, nothing jumps into a half-width slot. */
 @media (max-width:1100px){
-  .page{grid-template-columns:260px minmax(0,1fr);}
-  /* the account panel drops below the content rather than disappearing */
-  .rail-account{grid-column:1 / -1;order:3;position:static;max-width:430px;margin:0 auto;width:100%;}
-}
-@media (max-width:860px){
   .page{grid-template-columns:minmax(0,1fr);gap:16px;}
-  .rail-info{position:static;order:2;}
-  .rail-account{order:3;max-width:none;}
+  .rail-info,.rail-account{position:static;max-width:none;width:auto;}
+  #main{order:1;}
+  .rail-account{order:2;}
+  .rail-info{order:3;}
 }
 @media (max-width:640px){.page{padding:12px 10px 48px;}}
-.rail-info,.rail-account{position:sticky;top:calc(var(--nav-h) + 24px);}
+@media (min-width:1101px){
+  .rail-info,.rail-account{position:sticky;top:calc(var(--nav-h) + 24px);
+    max-height:calc(100vh - var(--nav-h) - 48px);overflow-y:auto;}
+}
 
 /* cards */
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;}
@@ -1912,6 +1915,36 @@ function sendCode(){
 }
 let currentHold = null;
 
+// Used when customers aren't asked for a code. Same server call, no code.
+function finishWithoutCode(){
+  mTitle.textContent = "Confirming";
+  mBody.innerHTML = `<div class="done"><div class="tick">\u00b7\u00b7\u00b7</div>
+    <div style="font-size:17px;font-weight:600;">Just a moment</div>
+    <p style="color:var(--ink-2);">Holding your slot.</p></div>`;
+  mFoot.innerHTML = "";
+  api("/api/holds/confirm", {method:"POST", body:{holdId:currentHold.holdId}})
+    .then(async r => {
+      if(r.needsPayment){
+        mTitle.textContent = "Taking you to payment";
+        mBody.innerHTML = `<div class="done"><div class="tick">\u2192</div>
+          <div style="font-size:17px;font-weight:600;">Redirecting to our card processor</div>
+          <p style="color:var(--ink-2);">Your slot is held while you pay.</p></div>`;
+        const c = await api(`/api/holds/${encodeURIComponent(r.holdId)}/checkout`, {method:"POST"});
+        window.location.assign(c.url);
+        return;
+      }
+      lastOrder = {
+        made: r.bookings.map(b => ({...b, date:new Date(b.day + "T12:00:00")})),
+        skipped: (r.skipped || []).map(d => fmtDate(new Date(d + "T12:00:00")))
+      };
+      manageToken = r.manageToken;
+      BOOKINGS.length = 0; BOOKINGS.push(...lastOrder.made);
+      await loadTutors().catch(() => {});
+      state.step = "done"; rails(); drawModal();
+    })
+    .catch(err => { closeModal(); toast(err.message); loadTutors().then(render).catch(() => {}); });
+}
+
 // ask the server to hold the slot(s) and email the customer a code
 async function requestHold(){
   const d = DAYS[state.dayIndex];
@@ -1987,11 +2020,15 @@ function drawModal(){
         </div>
         <div class="hint">Weeks where the tutor isn't free are skipped and never charged.</div></div>
       <p style="font-size:12px;color:var(--ink-2);margin:0;">
-        We'll email you a 6-digit code to check this address. ${CONFIG.paymentsEnabled
-          ? "Once it's confirmed you'll be taken to our card processor to pay."
-          : "Your tutor will arrange payment with you directly before the first session \u2014 nothing is charged here."}
+        ${CONFIG.verifyEmail
+          ? `We'll email you a 6-digit code to check this address. ${CONFIG.paymentsEnabled
+              ? "Once it's confirmed you'll be taken to our card processor to pay."
+              : "Nothing is charged here."}`
+          : `Your booking confirmation goes to this address, so do check it's right. ${CONFIG.paymentsEnabled
+              ? "You'll pay on the next step."
+              : "Your tutor will arrange payment with you directly \u2014 nothing is charged here."}`}
       </p>`;
-    mFoot.innerHTML = `<button class="btn btn-primary btn-block" id="next">Send code</button>`;
+    mFoot.innerHTML = `<button class="btn btn-primary btn-block" id="next">${CONFIG.verifyEmail ? "Send code" : (CONFIG.paymentsEnabled ? "Continue to payment" : "Confirm booking")}</button>`;
   }
   if(state.step === "otp"){
     mTitle.textContent = "Check your email";
@@ -2457,9 +2494,16 @@ document.addEventListener("click", e => {
       state.name = name; state.email = email;
       const ph = document.getElementById("i-phone");
       state.phone = ph ? ph.value.trim() : "";
-      e.target.disabled = true; e.target.textContent = "Sending code…";
+      e.target.disabled = true; e.target.textContent = CONFIG.verifyEmail ? "Sending code…" : "Just a moment…";
       requestHold()
-        .then(() => { state.step = "otp"; drawModal(); })
+        .then(r => {
+          if(r && r.verifyEmail === false){
+            // straight through: confirm the hold, which either books it or sends us to pay
+            finishWithoutCode();
+            return;
+          }
+          state.step = "otp"; drawModal();
+        })
         .catch(err => { closeModal(); toast(err.message); loadTutors().then(render); });
       return;
     }
@@ -2512,7 +2556,29 @@ document.addEventListener("change", e => {
     if(!f) return;
     if(f.size > 3 * 1024 * 1024) return toast("That image is over 3 MB. Try a smaller one.");
     const reader = new FileReader();
-    reader.onload = () => { t.photo = reader.result; render(); saveMe({photo:t.photo}, "Photo updated."); };
+    reader.onload = () => {
+      // Downscale before storing. A phone photo is several megabytes; at the size
+      // it's actually displayed, 320px is plenty and lands around 30 KB.
+      const img = new Image();
+      img.onload = () => {
+        const max = 320;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const cw = Math.round(img.width * scale), ch = Math.round(img.height * scale);
+        let out = reader.result;
+        try {
+          const c = document.createElement("canvas");
+          c.width = cw; c.height = ch;
+          const ctx = c.getContext("2d");
+          ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cw, ch);
+          ctx.drawImage(img, 0, 0, cw, ch);
+          out = c.toDataURL("image/jpeg", 0.85);
+        } catch {}
+        t.photo = out; render();
+        saveMe({photo:t.photo}, `Photo updated (${Math.round(out.length / 1024)} KB).`);
+      };
+      img.onerror = () => toast("That file doesn't look like an image.");
+      img.src = reader.result;
+    };
     reader.onerror = () => toast("Couldn't read that file.");
     reader.readAsDataURL(f);
     return;
