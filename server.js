@@ -65,7 +65,31 @@ function load() {
   try { return { ...EMPTY, ...JSON.parse(fs.readFileSync(DB_PATH, "utf8")) }; }
   catch { return JSON.parse(JSON.stringify(EMPTY)); }
 }
+/* ---------------- optional Postgres ----------------
+   Set DATABASE_URL and the whole document lives in Postgres instead of a file,
+   so it survives the disk being wiped on hosts like Render. Everything else
+   in this file is unchanged — the data shape is identical. */
+const DATABASE_URL = process.env.DATABASE_URL || null;
+let pg = null;
+async function initPg(ClientOverride) {
+  if (!DATABASE_URL) return false;
+  const { Client } = ClientOverride ? { Client: ClientOverride } : require("pg");
+  pg = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  await pg.connect();
+  await pg.query("CREATE TABLE IF NOT EXISTS store (id int PRIMARY KEY, doc jsonb NOT NULL)");
+  const r = await pg.query("SELECT doc FROM store WHERE id = 1");
+  if (r.rows.length) db = { ...EMPTY, ...r.rows[0].doc };
+  else await pg.query("INSERT INTO store (id, doc) VALUES (1, $1)", [JSON.stringify(db)]);
+  return true;
+}
+async function writePg() {
+  if (!pg) return;
+  await pg.query("INSERT INTO store (id, doc) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET doc = $1",
+    [JSON.stringify(db)]);
+}
+
 function save(db) {
+  if (pg) { writePg().catch(e => console.error("Could not write to the database:", e.message)); return; }
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 let db = load();
@@ -75,7 +99,11 @@ let db = load();
    default as soon as you've signed in. */
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "argandtutors@gmail.com").toLowerCase();
 const ADMIN_DEFAULT_PASSWORD = process.env.ADMIN_PASSWORD || "Confazzled28@";
-const PLATFORM_COMMISSION = Math.min(0.9, Math.max(0, Number(process.env.PLATFORM_COMMISSION ?? 0.2)));
+const DEFAULT_COMMISSION = Math.min(0.9, Math.max(0, Number(process.env.PLATFORM_COMMISSION ?? 0.2)));
+if (!db.settings) db.settings = {};
+if (db.settings.commission === undefined) db.settings.commission = DEFAULT_COMMISSION;
+const commission = () => Math.min(0.9, Math.max(0, Number(db.settings.commission)));
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL || OWNER_EMAIL;
 if (!Array.isArray(db.admins)) db.admins = [];
 function ensureAdmin() {
   let a = db.admins.find(x => x.email === ADMIN_EMAIL);
@@ -162,8 +190,8 @@ function ownerEmailBody(app) {
       <tr><td style="padding:4px 12px 4px 0;color:#555">Phone</td><td>${app.phone ? esc(app.phone) : "not given"}</td></tr>
     </table>
     <p style="font-family:system-ui;font-size:14px;white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:6px">${esc(app.bio)}</p>
-    <p style="font-family:system-ui">If you're happy to take them on, give them this confirmation code:</p>
-    <p style="font-family:ui-monospace,monospace;font-size:32px;letter-spacing:6px;font-weight:700">${app.code}</p>
+    <p>If you're happy to take them on, give them this confirmation code:</p>
+    ${codeBlock(app.code)}
     <p style="font-family:system-ui;font-size:13px;color:#555">
       They enter it on the site to activate their account. It expires in 14 days.
       To reject the application, do nothing — no account is created without the code.
@@ -408,7 +436,56 @@ const BRAND = process.env.BRAND || "Argand Tutors";
 
 const clean = (v, max = 500) => String(v ?? "").trim().slice(0, max);
 const money = n => "\u00a3" + n.toFixed(2).replace(/\.00$/, "");
-const wrap = i => `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:15px;line-height:1.6;color:#111;max-width:520px">${i}<p style="color:#777;font-size:12px;margin-top:28px">${esc(BRAND)}</p></div>`;
+// Email HTML has to survive Outlook, so it's tables and inline styles throughout.
+// The mark is drawn with borders rather than an image — most clients block images
+// by default, and a header that vanishes looks broken.
+const wrap = (inner, opts = {}) => `<!doctype html>
+<html><body style="margin:0;padding:0;background:#f4f2ee;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f2ee;padding:24px 12px;">
+<tr><td align="center">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:540px;background:#ffffff;border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,.08);">
+
+    <tr><td style="background:#2743c4;padding:20px 24px;">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td width="34" style="padding-right:12px;">
+          <table role="presentation" width="30" height="30" cellpadding="0" cellspacing="0"
+                 style="border-left:2px solid #ffffff;border-bottom:2px solid #ffffff;">
+            <tr><td align="right" valign="top" style="font-family:Georgia,serif;font-size:15px;color:#ffffff;line-height:1;padding:1px 2px 0 0;">&bull;</td></tr>
+          </table>
+        </td>
+        <td style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;">
+          <div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:-.2px;">${esc(BRAND)}</div>
+          <div style="color:rgba(255,255,255,.72);font-size:12px;">GCSE and A-Level maths, physics and computing</div>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <tr><td style="padding:24px;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;">
+      ${inner}
+    </td></tr>
+
+    <tr><td style="background:#fafafa;border-top:1px solid rgba(0,0,0,.08);padding:16px 24px;
+        font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:12px;color:#666;line-height:1.5;">
+      Questions? Reply to this email or write to
+      <a href="mailto:${esc(CONTACT_EMAIL)}" style="color:#2743c4;">${esc(CONTACT_EMAIL)}</a>.<br>
+      ${esc(BRAND)}${opts.footer ? " &middot; " + opts.footer : ""}
+    </td></tr>
+
+  </table>
+</td></tr></table>
+</body></html>`;
+
+// a button that still looks like a button in Outlook
+const emailButton = (href, label) => `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px 0;">
+  <tr><td style="background:#2743c4;border-radius:6px;">
+    <a href="${href}" style="display:inline-block;padding:11px 22px;color:#ffffff;text-decoration:none;
+       font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;font-weight:600;">${label}</a>
+  </td></tr></table>`;
+
+// the big code, styled so it reads at a glance
+const codeBlock = code => `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;">
+  <tr><td style="background:#eef1fc;border-radius:8px;padding:14px 22px;font-family:ui-monospace,Menlo,Consolas,monospace;
+     font-size:30px;letter-spacing:7px;font-weight:700;color:#182b8c;">${code}</td></tr></table>`;
 const dayKey = d => d.toISOString().slice(0, 10);
 
 function currentAdmin(req) {
@@ -605,8 +682,8 @@ function earningsFor(tutorId) {
   const round = n => Math.round(n * 100) / 100;
   return {
     sessions, upcoming, hours: round(hours), gross: round(gross),
-    commission: round(outstanding * PLATFORM_COMMISSION),
-    owed: round(outstanding * (1 - PLATFORM_COMMISSION)),
+    commission: round(outstanding * commission()),
+    owed: round(outstanding * (1 - commission())),
     outstandingGross: round(outstanding)
   };
 }
@@ -653,8 +730,10 @@ async function createHold(req, res, ip) {
   db.holds.push(hold); save(db);
 
   sendEmail(hold.email, "Your " + BRAND + " verification code", wrap(
-    `<p>Your code is</p><p style="font-family:ui-monospace,monospace;font-size:32px;letter-spacing:6px;font-weight:700">${hold.code}</p>
-     <p style="font-size:13px;color:#555">It expires in 15 minutes. If this wasn't you, ignore it \u2014 nothing has been booked.</p>`)
+    `<h2 style="font-size:19px;margin:0 0 6px;">Confirm your email</h2>
+     <p style="margin:0 0 4px;color:#555;">Enter this code to finish booking:</p>
+     ${codeBlock(hold.code)}
+     <p style="font-size:13px;color:#666;margin:0;">It expires in 15 minutes. If this wasn't you, ignore it \u2014 nothing has been booked.</p>`)
   ).catch(e => {
     console.error("\n  ####  COULD NOT EMAIL THE CUSTOMER THEIR CODE  ####");
     console.error("  Reason: " + e.message);
@@ -735,7 +814,7 @@ function finaliseBooking(res, hold, pay) {
      ${pay.paid
        ? `<p style="font-size:13px;color:#555">Paid by card \u2014 ${money(hold.total)} in total. Your card statement will show ${esc(BRAND)}.</p>`
        : `<p style="font-size:13px;color:#555">${esc(t.name.split(" ")[0])} will arrange payment with you directly before the first session.</p>`}
-     <p><a href="${PUBLIC_URL}/#/manage/${f.manageToken}">Manage or cancel this booking</a></p>
+     ${emailButton(`${PUBLIC_URL}/#/manage/${f.manageToken}`, "View or cancel this booking")}
      <p style="font-size:13px;color:#555">Free to cancel up to 24 hours before, using the link above.</p>`)
   ).catch(e => console.error(e.message));
 
@@ -750,7 +829,7 @@ function finaliseBooking(res, hold, pay) {
      ${PAYMENTS_ENABLED && pay.paid
         ? `<p style="font-size:13px;color:#555">Paid by card. Nothing to collect.</p>`
         : `<p style="font-size:13px;color:#555">Payment hasn't been taken by the site \u2014 arrange it with ${esc(f.name.split(" ")[0])} directly.</p>`}
-     <p><a href="${PUBLIC_URL}/#/staff">Open your dashboard</a></p>`)
+     ${emailButton(`${PUBLIC_URL}/#/staff`, "Open your dashboard")}`)
   ).catch(e => console.error(e.message));
 
   json(res, 201, { bookings: made.map(x => ({ ...x, manageToken: undefined })), manageToken: f.manageToken, skipped: hold.skipped });
@@ -902,7 +981,8 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/tutors" && req.method === "GET")
       return json(res, 200, db.tutors.filter(t => t.active).map(publicTutor));
     if (p === "/api/config")
-      return json(res, 200, { brand: BRAND, subjects: SUBJECTS, lengths: LENGTHS, paymentsEnabled: PAYMENTS_ENABLED });
+      return json(res, 200, { brand: BRAND, subjects: SUBJECTS, lengths: LENGTHS,
+        paymentsEnabled: PAYMENTS_ENABLED, contactEmail: CONTACT_EMAIL });
     if (p === "/api/holds" && req.method === "POST") return await createHold(req, res, ip);
     if (p === "/api/holds/confirm" && req.method === "POST") return await confirmHold(req, res);
     if ((mm2 = p.match(/^\/api\/holds\/([^/]+)\/checkout$/)) && req.method === "POST")
@@ -969,7 +1049,7 @@ const server = http.createServer(async (req, res) => {
           tutors,
           totals: { owed: Math.round(totals.owed * 100) / 100, hours: Math.round(totals.hours * 100) / 100,
                     gross: Math.round(totals.gross * 100) / 100 },
-          commission: PLATFORM_COMMISSION,
+          commission: commission(),
           applications: db.applications.filter(a => a.status === "pending")
             .map(a => ({ id: a.id, name: a.name, email: a.email, university: a.university,
                          course: a.course, grades: a.grades, createdAt: a.createdAt })),
@@ -1026,6 +1106,61 @@ const server = http.createServer(async (req, res) => {
         console.log(`[audit] ${stamp} admin settled ${n} sessions for ${t.name}`);
         return json(res, 200, { settled: n, earnings: earningsFor(t.id) });
       }
+      if (p === "/api/admin/settings" && req.method === "POST") {
+        const body = await readBody(req);
+        if (body.commission !== undefined) {
+          const c = Number(body.commission);
+          if (!(c >= 0 && c <= 90)) return json(res, 400, { error: "Commission must be between 0 and 90 percent." });
+          db.settings.commission = c / 100;
+        }
+        save(db);
+        return json(res, 200, { commission: commission() });
+      }
+
+      if (p === "/api/admin/bookings" && req.method === "GET") {
+        const rows = db.bookings.slice().sort((a, b) => (b.day + b.hour).localeCompare(a.day + a.hour)).slice(0, 200);
+        return json(res, 200, rows.map(b => {
+          const t = db.tutors.find(x => x.id === b.tutorId);
+          return { ref: b.ref, day: b.day, hour: b.hour, mins: b.mins, price: b.price, status: b.status,
+                   promo: b.promo || null, paid: !!b.paid, settled: !!b.settledAt,
+                   subject: (subjectById(b.subjectId) || {}).name, tutor: t ? t.name : "—",
+                   client: b.name, email: b.email, phone: b.phone || "" };
+        }));
+      }
+
+      if (p === "/api/admin/export.csv" && req.method === "GET") {
+        const esc2 = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+        const head = ["Reference","Date","Time","Minutes","Subject","Tutor","Client","Email","Phone",
+                      "Price","Promo","Status","Paid by card","Settled with tutor"];
+        const lines = [head.join(",")];
+        for (const b of db.bookings) {
+          const t = db.tutors.find(x => x.id === b.tutorId);
+          lines.push([b.ref, b.day, String(b.hour).padStart(2, "0") + ":00", b.mins,
+            (subjectById(b.subjectId) || {}).name, t ? t.name : "", b.name, b.email, b.phone || "",
+            b.price, b.promo || "", b.status, b.paid ? "yes" : "no", b.settledAt ? "yes" : "no"
+          ].map(esc2).join(","));
+        }
+        const body = lines.join("\r\n");
+        res.writeHead(200, { "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="argand-bookings-${new Date().toISOString().slice(0,10)}.csv"` });
+        return res.end(body);
+      }
+
+      if ((am = p.match(/^\/api\/admin\/applications\/([^/]+)$/)) && req.method === "GET") {
+        const a = db.applications.find(x => x.id === am[1]);
+        if (!a) return json(res, 404, { error: "No such application." });
+        console.log(`[audit] ${new Date().toISOString()} admin viewed the code for ${a.name}`);
+        return json(res, 200, { code: a.code, email: a.email, name: a.name, bio: a.bio,
+          phone: a.phone, grades: a.grades, subjectNames: a.subjectNames });
+      }
+
+      if ((am = p.match(/^\/api\/admin\/applications\/([^/]+)\/reject$/)) && req.method === "POST") {
+        const a = db.applications.find(x => x.id === am[1]);
+        if (!a) return json(res, 404, { error: "No such application." });
+        a.status = "rejected"; save(db);
+        return json(res, 200, { ok: true });
+      }
+
       if (p === "/api/admin/password" && req.method === "POST") {
         const body = await readBody(req);
         if (String(body.password || "").length < 10)
@@ -1085,6 +1220,35 @@ if (process.argv.includes("--test-email")) {
     });
 } else
 
+if (process.argv.includes("--test-db")) {
+  console.log("\n" + BRAND + " \u2014 database test\n");
+  if (!DATABASE_URL) {
+    console.log("  DATABASE_URL isn't set, so records are stored in " + DB_PATH + ".");
+    console.log("  That's fine locally. On a host that wipes its disk, set DATABASE_URL.\n");
+    process.exit(0);
+  }
+  initPg()
+    .then(async () => {
+      const before = JSON.stringify(db).length;
+      await writePg();
+      console.log("  Connected, table ready, document written (" + before + " bytes).");
+      console.log("  Tutors: " + db.tutors.length + "  Bookings: " + db.bookings.length + "\n");
+      process.exit(0);
+    })
+    .catch(err => {
+      console.log("  FAILED: " + err.message + "\n");
+      console.log("  Check the connection string is the pooled one from Neon, and that");
+      console.log("  it ends with ?sslmode=require.\n");
+      process.exit(1);
+    });
+} else
+
+initPg().catch(err => {
+  console.error("\n  Could not reach the database: " + err.message);
+  console.error("  Falling back to " + DB_PATH + " so the site still runs.\n");
+  pg = null;
+}).then(() => {
+
 server.listen(PORT, () => {
   console.log(`\nArgand Tutors running at ${PUBLIC_URL}`);
   console.log(`Owner email:  ${OWNER_EMAIL}   (applications and approval codes go here)`);
@@ -1099,12 +1263,14 @@ server.listen(PORT, () => {
     console.log(`\n  \u26a0  The admin account is still on its default password.\n     Sign in and change it under Admin \u2192 Security before going live.\n`);
   if (!process.env.ENCRYPTION_KEY)
     console.log(`Bank details: encrypted with the key in ${KEY_PATH} \u2014 back this file up, and never commit it`);
+  console.log(`Storage:      ${pg ? "Postgres (survives restarts)" : DB_PATH + " (a file \u2014 lost if the host wipes its disk)"}`);
   HOME = findHomePage();
   if (HOME.warning) {
     console.log(`\n  ⚠  ${HOME.warning}\n`);
   } else {
     console.log(`Home page:    ${HOME.file}\n`);
   }
+});
 });
 
 // Reminders: one a day before, one an hour before. Flags on the booking stop

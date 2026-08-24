@@ -149,9 +149,11 @@ All optional — the site runs without any of them. Set them as environment vari
 | `STRIPE_SECRET_KEY` | *(none)* | **Turns on card payments.** `sk_test_…` for testing, `sk_live_…` for real money |
 | `PUBLIC_URL` | `http://localhost:3000` | Used for links in emails and Stripe redirects |
 | `CURRENCY` | `gbp` | Currency for payments |
-| `DB_PATH` | `./data.json` | Where records are stored |
+| `DB_PATH` | `./data.json` | Where records are stored when there's no database |
+| `DATABASE_URL` | *(none)* | Postgres connection string. Set it and records live there instead |
+| `CONTACT_EMAIL` | your `OWNER_EMAIL` | Address shown on the contact page and in emails |
 | `ADMIN_PASSWORD` | `Confazzled28@` | Initial admin password. Change it in the console after first sign-in |
-| `PLATFORM_COMMISSION` | `0.2` | Your cut. `0.2` means the tutor keeps 80% |
+| `PLATFORM_COMMISSION` | `0.2` | Starting cut. After first run, change it in the admin console instead |
 | `ENCRYPTION_KEY` | *(auto-generated)* | Key for encrypting bank details. Set this on Render |
 
 If both email keys are set, Brevo wins. With neither, emails print to the terminal.
@@ -229,18 +231,48 @@ payment, and emails on both sides.
 
 ## Putting it online
 
-It's a plain Node server, so almost anywhere works. Easiest first:
+Free, and it survives restarts. Two services, both permanently free, neither needs a card:
 
-**Render** — push to GitHub, create a Web Service, build `npm install`, start `node server.js`,
-add the environment variables. Free tier is fine to start; it sleeps when idle.
+### 1. The database — Neon
 
-**Railway / Fly.io** — same shape, both detect Node automatically.
+Render's free disk is wiped whenever the service restarts, which takes your tutors and bookings
+with it. A free Postgres database fixes that permanently.
 
-**A VPS** — `node server.js` behind nginx or Caddy for HTTPS, with `systemd` or `pm2`
-to keep it running.
+1. Sign up at [neon.tech](https://neon.tech) — free tier, no card, doesn't expire.
+2. Create a project. Copy the **pooled** connection string; it looks like
+   `postgres://user:pass@ep-xxx-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require`.
+3. Test it before deploying:
+   ```
+   $env:DATABASE_URL="postgres://…"
+   node server.js --test-db
+   ```
+   It should say connected, table ready. Then start normally and your data goes to Neon
+   rather than `data.json`.
 
-Then point your domain at it. Buy `argandtutors.co.uk` first and check
-Companies House and the IPO trademark register for class 41 before you commit to the name.
+With `DATABASE_URL` unset the site still uses the file, so nothing breaks locally.
+
+### 2. The site — Render
+
+1. Push the folder to GitHub (`.gitignore` keeps `data.json` and `.enc-key` out).
+2. On [render.com](https://render.com), New → Web Service → your repo.
+   Build `npm install`, start `node server.js`, Free instance.
+3. Under Environment add:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | your Neon connection string |
+| `ENCRYPTION_KEY` | the contents of your local `.enc-key` |
+| `OWNER_EMAIL` | `argandtutors@gmail.com` |
+| `BREVO_API_KEY` | your Brevo key |
+| `PUBLIC_URL` | your `https://….onrender.com` address |
+
+Render's free web service sleeps after 15 minutes idle and takes about a minute to wake, and you
+get 750 instance-hours a month. Fine for alpha. About $7/month removes the sleep when you're ready.
+
+**Why not the alternatives:** Render's own free Postgres expires 30 days after creation. Fly.io no
+longer has a free tier for new accounts. Railway is a one-off trial credit. Supabase pauses free
+projects after a week idle, which is exactly the failure mode you don't want. Neon scales to zero
+instead of pausing, which is why it's the pick here.
 
 ## Before taking real money or real students
 

@@ -4,6 +4,11 @@
   "private": true,
   "description": "Argand Tutors — booking site with owner-approved tutor accounts",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
+  "scripts": {
+    "start": "node server.js",
+    "test-email": "node server.js --test-email",
+    "test-db": "node server.js --test-db"
+  },
+  "dependencies": { "pg": "^8.13.1" },
   "engines": { "node": ">=18" }
 }

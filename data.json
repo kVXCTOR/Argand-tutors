@@ -258,8 +258,66 @@
       "remind24": false,
       "remind1": false,
       "createdAt": "2026-08-21T20:46:58.328Z"
+    },
+    {
+      "ref": "AR-716B5A",
+      "manageToken": "6ec2d2b3f024d27d6dd70c14b762a006a50e3ac4",
+      "tutorId": "88c356a3-00da-43a3-a2f8-63cdb50bb08b",
+      "subjectId": 3,
+      "day": "2026-08-22",
+      "hour": 10,
+      "mins": 60,
+      "price": 29.6,
+      "name": "Victor Bamidele Kolawole",
+      "email": "vicplayz2008@gmail.com",
+      "phone": "+447376295547",
+      "promo": "EPSILON",
+      "status": "confirmed",
+      "note": null,
+      "paid": false,
+      "checkoutSessionId": null,
+      "paymentIntent": null,
+      "remind24": false,
+      "remind1": false,
+      "createdAt": "2026-08-22T11:07:17.916Z"
+    },
+    {
+      "ref": "AR-56F3DA",
+      "manageToken": "5795084bc4d311ce6bf1c48de90555abef3cfb17",
+      "tutorId": "88c356a3-00da-43a3-a2f8-63cdb50bb08b",
+      "subjectId": 3,
+      "day": "2026-08-22",
+      "hour": 13,
+      "mins": 60,
+      "price": 37,
+      "name": "Victor Bamidele Kolawole",
+      "email": "vicplayz2008@gmail.com",
+      "phone": "+447376295547",
+      "promo": null,
+      "status": "confirmed",
+      "note": null,
+      "paid": true,
+      "checkoutSessionId": "cs_test_a1tCfsdqmRfz1DA0bmYht6kYrRRaw0bT3nkm4g06h8ZgIDNOXj3KY2eJ1Y",
+      "paymentIntent": "pi_3U7J21Fvic0ilEtG0oTAjOkw",
+      "remind24": false,
+      "remind1": false,
+      "createdAt": "2026-08-22T17:48:40.782Z"
     }
   ],
   "holds": [],
-  "waitlist": []
+  "waitlist": [],
+  "admins": [
+    {
+      "id": "cdf9e770-a0e7-4ab7-b2d2-52149a17a1e0",
+      "email": "argandtutors@gmail.com",
+      "name": "Argand Admin",
+      "passwordHash": "scrypt$baff93d755153876f2062280ef09272f$5f24097e506e802006f032c2ae294adde17ff0806122740a01c0005c6453d75c4bde3f8fb1e9ace956e729da8b70375360f2c4d6e1c4c653505a481959590e1e",
+      "usingDefaultPassword": false,
+      "createdAt": "2026-08-22T19:31:18.298Z",
+      "session": {
+        "token": "3d99b948836410fa546c1bb930dd72e94edeac568356d4f6",
+        "expires": 1788032106266
+      }
+    }
+  ]
 }

@@ -392,6 +392,9 @@ button.row:hover::before{opacity:1;}
       Studying a subject your school doesn't offer, retaking, or working from home? Book single sessions
       when you get stuck rather than a weekly slot.
       <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
+      <b style="color:var(--ink);display:block;margin-bottom:6px;">Need a hand?</b>
+      <button data-go="#/contact" style="background:none;border:none;padding:0;color:var(--blue);font-weight:600;font-size:12px;">Contact us</button>
+      <div style="border-top:1px solid var(--line);margin:10px 0;"></div>
       <b style="color:var(--ink);display:block;margin-bottom:6px;">Why Argand</b>
       The Argand diagram plots real against imaginary. We plot four subjects against the people who sat them most recently.
     </div>
@@ -547,7 +550,8 @@ const state = {
   route:{name:"browse"}, level:"All", area:"All", query:"", tutorFilter:"All",
   dayIndex:0, slotHour:null, lengthMins:60,
   step:null, name:"", email:"", phone:"", promo:"", promoInput:"", promoPercent:0,
-  rescheduleRef:null, signedIn:null, isAdmin:false, adminData:null, adminOpen:null, showPw:false, token:null,
+  rescheduleRef:null, signedIn:null, isAdmin:false, adminData:null, adminOpen:null,
+  adminBookings:null, appCode:null, showPw:false, token:null,
   repeat:1, waitHour:null, noteRef:null,
   applyStep:"form", applyId:null, applyCode:null, applyPicked:[], applyErr:""
 };
@@ -718,6 +722,7 @@ function parseRoute(){
     return subject(+parts[1]) ? {name:"subject", subjectId:+parts[1]} : {name:"browse"};
   if(parts[0] === "tutors") return {name:"tutors"};
   if(parts[0] === "apply") return {name:"apply"};
+  if(parts[0] === "contact") return {name:"contact"};
   if(parts[0] === "profile" && parts[1]){
     const t = tutor(parts[1]);
     return t ? {name:"profile", tutorId:t.id, subjectId:t.subjects[0]} : {name:"tutors"};
@@ -767,10 +772,10 @@ function render(){
   page.classList.toggle("is-narrow", n === "login");
   ({browse:viewBrowse, subject:viewSubject, tutors:viewTutors, profile:viewProfile, book:viewBook,
     bookings:viewBookings, login:viewLogin, dash:viewDash, availability:viewAvailability,
-    edit:viewEdit, apply:viewApply, manage:viewManage, paid:viewPaid, admin:viewAdmin}[n])();
+    edit:viewEdit, apply:viewApply, manage:viewManage, paid:viewPaid, admin:viewAdmin, contact:viewContact}[n])();
   main.firstElementChild && main.firstElementChild.classList.add("rise");
   rails();
-  const tab = {browse:"browse", subject:"browse", book:"browse", tutors:"tutors", profile:"tutors", apply:"tutors", bookings:"bookings", manage:"bookings", paid:"bookings"}[n] || "";
+  const tab = {browse:"browse", subject:"browse", book:"browse", tutors:"tutors", profile:"tutors", apply:"tutors", contact:"tutors", bookings:"bookings", manage:"bookings", paid:"bookings"}[n] || "";
   document.querySelectorAll(".nav-link").forEach(b => b.classList.toggle("is-active", b.dataset.tab === tab));
   window.scrollTo({top:0, behavior:"instant"});
 }
@@ -796,6 +801,7 @@ function rails(){
        <button data-go="#/staff/edit">Edit profile</button>
        <button data-signout>Sign out</button>`
     : `<button data-go="#/bookings">Manage a booking</button>
+       <button data-go="#/contact">Contact us</button>
        <button data-go="#/apply">Apply to tutor</button>
        <button data-go="#/staff">Tutor sign in</button>`;
 
@@ -1182,7 +1188,8 @@ function viewBookings(){
             <div class="row-meta">${fmtDate(b.date)} at ${fmtHour(b.hour)} · ${b.mins} min</div>
             <div class="row-note">
               <span class="badge ${b.status==="confirmed"?"badge-green":"badge-red"}">${b.status==="confirmed"?"Confirmed":"Cancelled"}</span>
-              <span class="ref">${b.ref}</span><span class="dot"></span><span>${money(b.price)} paid</span>
+              <button class="ref" data-copy="${b.ref}" style="background:none;border:none;padding:0;color:var(--blue);cursor:pointer;font-size:12px;">${b.ref}</button>
+              <span class="dot"></span><span>${money(b.price)} paid</span>
               ${b.status==="confirmed"?`<span class="dot"></span><span>${free?"Free to cancel":"Inside 24 hours — no refund"}</span>`:""}
             </div>
             ${b.note ? `<div class="notebox"><b>Note from ${tutor(b.tutorId).name.split(" ")[0]}:</b> ${esc(b.note)}</div>` : ""}
@@ -1252,6 +1259,9 @@ function viewAdmin(){
   }
   const d = state.adminData;
   const pct = Math.round(d.commission * 100);
+  if(!state.adminBookings){
+    api("/api/admin/bookings").then(rows => { state.adminBookings = rows; if(state.route.name === "admin") render(); }).catch(() => {});
+  }
 
   main.innerHTML = `
     <div class="card">
@@ -1282,12 +1292,30 @@ function viewAdmin(){
           <div class="row-meta">${esc(a.course)}, ${esc(a.university)} · ${esc(a.email)}</div>
           <div class="row-note">${a.grades.map(g => `<span class="grade ${g.grade==="A*"?"top":""}"><b>${esc(g.grade)}</b>${esc(g.subject)}</span>`).join("")}</div>
         </div>
-        <div class="row-side"><span class="badge badge-amber">Code sent to you</span></div>
+        <div class="row-side" style="gap:6px;">
+          ${state.appCode && state.appCode.id === a.id
+            ? `<span class="ref" style="font-size:15px;color:var(--green);font-weight:700;">${esc(state.appCode.code)}</span>
+               <button class="btn btn-outline btn-sm" data-copy="${esc(state.appCode.code)}">Copy code</button>`
+            : `<button class="btn btn-outline btn-sm" data-app-code="${a.id}">Show code</button>`}
+        </div>
       </div>`).join("")}
       <div class="card-pad" style="border-top:1px solid var(--line);font-size:12px;color:var(--ink-2);">
-        Approve by sending the applicant the six-digit code from your email.
+        Send the applicant their code to approve them. Ignore the application to reject it —
+        no account exists until the code is used.
       </div>
     </div>` : ""}
+
+    <div class="card">
+      <div class="card-head">Your commission<span class="sub">Applies to unsettled sessions</span></div>
+      <div class="avrow">
+        <span class="avday">You keep</span>
+        <input id="admin-commission" type="number" min="0" max="90" step="1" value="${pct}"
+          style="width:80px;height:34px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:15px;">
+        <span class="muted">%</span>
+        <button class="btn btn-primary btn-sm" id="admin-commission-save">Save</button>
+        <span class="hint" style="margin:0;">Tutors keep the remaining ${100 - pct}%.</span>
+      </div>
+    </div>
 
     <div class="card">
       <div class="card-head">Tutors<span class="sub">${pct}% platform commission</span></div>
@@ -1318,6 +1346,27 @@ function viewAdmin(){
           ${open ? adminPanel(t) : ""}
         </div>`;
       }).join("") : `<div class="empty"><b>No tutors yet</b>Approved applicants appear here.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="card-head">Recent bookings
+        <a class="btn btn-outline btn-sm" href="/api/admin/export.csv" download id="csv-link">Export CSV</a></div>
+      ${!state.adminBookings ? `<div class="empty">Loading…</div>`
+        : !state.adminBookings.length ? `<div class="empty"><b>No bookings yet</b></div>`
+        : state.adminBookings.slice(0, 25).map(b => `<div class="row" style="padding:10px 16px;">
+            <div class="row-body">
+              <div style="font-weight:600;font-size:14px;">${esc(b.subject || "—")} · ${esc(b.tutor)}</div>
+              <div class="row-meta">${esc(b.client)} · ${esc(b.email)}${b.phone ? " · " + esc(b.phone) : ""}</div>
+              <div class="row-note">
+                <span class="badge ${b.status==="confirmed"?"badge-green":"badge-red"}">${b.status}</span>
+                <span>${b.day} ${String(b.hour).padStart(2,"0")}:00</span><span class="dot"></span>
+                <span>${b.mins} min</span>
+                ${b.promo ? `<span class="dot"></span><span style="color:var(--green);">${esc(b.promo)}</span>` : ""}
+                ${b.settled ? `<span class="dot"></span><span>tutor paid</span>` : ""}
+              </div>
+            </div>
+            <div class="row-side"><div class="price">${money(b.price)}</div></div>
+          </div>`).join("")}
     </div>
 
     <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
@@ -1617,6 +1666,58 @@ async function verifyApplication(code){
   const r = await fetch(`${API}/api/applications/${encodeURIComponent(state.applyId)}/verify`, {
     method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({code})});
   return r.ok;
+}
+
+function viewContact(){
+  const mail = CONFIG.contactEmail || "argandtutors@gmail.com";
+  main.innerHTML = `
+    <div class="card">
+      <div class="hero" style="padding-bottom:16px;">
+        <div class="hero-mark"><svg viewBox="0 0 24 24" fill="none" stroke="#2743c4" stroke-width="1.4" stroke-linecap="round">
+          <path d="M4 20V4M4 20h16"/><path d="M4 20l11-11"/><circle cx="15" cy="9" r="2.6" fill="#2743c4" stroke="none"/></svg></div>
+        <h1>Get in touch</h1>
+        <p>Questions about a booking, a subject we don't list, or anything else — email us and
+        you'll hear back the same day in term time.</p>
+      </div>
+      <div class="card-pad" style="border-top:1px solid var(--line);">
+        <div class="uni" style="font-size:15px;">
+          <svg viewBox="0 0 24 24" style="fill:var(--blue);"><path d="M20 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 4l-8 5-8-5V6l8 5 8-5z"/></svg>
+          <a href="mailto:${esc(mail)}" style="color:var(--blue);font-weight:600;">${esc(mail)}</a>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+          <a class="btn btn-primary" href="mailto:${esc(mail)}">Email us</a>
+          <button class="btn btn-outline" data-copy="${esc(mail)}">Copy address</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">Common questions</div>
+      ${[
+        ["Do I need an account to book?",
+         "No. Give a name and an email, confirm the code we send, and everything you need arrives by email — including a private link for cancelling."],
+        ["What if I need to cancel?",
+         "Free up to 24 hours before, using the link in your confirmation email. Inside 24 hours the session is charged in full."],
+        ["Can I book a one-off session?",
+         "Yes. Most students booking around self-teaching do exactly that — book when you're stuck rather than committing weekly."],
+        ["Do you teach a subject that isn't listed?",
+         "We stick to maths, further maths, physics and computer science, at GCSE and A-Level. Email us if you're close to that and we'll tell you honestly whether we can help."],
+        ["How do I pay?",
+         CONFIG.paymentsEnabled
+           ? "By card at the end of booking. Card details go straight to our payment processor and never touch our site."
+           : "Your tutor arranges payment with you directly before the first session. Nothing is charged on the site."],
+        ["I want to tutor for you.",
+         "Applications are open to current undergraduates with an A* in what they'd teach. Apply from the tutors page."]
+      ].map(([q, a]) => `<div class="row" style="flex-direction:column;gap:4px;align-items:flex-start;">
+        <div style="font-weight:600;">${q}</div>
+        <div style="color:var(--ink-2);font-size:13px;">${a}</div>
+      </div>`).join("")}
+    </div>
+
+    <div class="card card-pad" style="font-size:12px;color:var(--ink-2);">
+      Argand Tutors is a UK tutoring service. All tutors hold an A* in the subject they teach and are
+      approved individually by the owner before taking students.
+    </div>`;
 }
 
 function viewApply(){
@@ -1974,7 +2075,7 @@ function drawModal(){
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save]");
+  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save],[data-copy],[data-app-code]");
   if(el){
     if(el.dataset.signout !== undefined){
       state.signedIn = null; state.isAdmin = false; state.adminData = null; state.token = null;
@@ -1983,7 +2084,7 @@ document.addEventListener("click", e => {
     }
     if(el.dataset.go){
       if(el.dataset.go.startsWith("#/staff")) dashLoaded = false;
-      if(el.dataset.go === "#/admin") state.adminData = null;
+      if(el.dataset.go === "#/admin"){ state.adminData = null; state.adminBookings = null; }
       return go(el.dataset.go);
     }
     if(el.dataset.level){ state.level = el.dataset.level; return render(); }
@@ -2172,6 +2273,35 @@ document.addEventListener("click", e => {
     tutor(state.signedIn).rates = {};
     return saveMe({rates:{}}, "Back to the suggested prices.");
   }
+  if(e.target.id === "csv-link"){
+    e.preventDefault();
+    fetch(API + "/api/admin/export.csv", { headers: { Authorization: "Bearer " + state.token } })
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error("Export failed")))
+      .then(blob => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `argand-bookings-${iso(new Date())}.csv`;
+        a.click(); URL.revokeObjectURL(a.href);
+        toast("Downloaded.");
+      })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.appCode){
+    const id = el.dataset.appCode;
+    api(`/api/admin/applications/${id}`)
+      .then(a => { state.appCode = { id, code: a.code }; render(); })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(e.target.id === "admin-commission-save"){
+    const v = +document.getElementById("admin-commission").value;
+    if(!(v >= 0 && v <= 90)) return toast("Pick a number between 0 and 90.");
+    api("/api/admin/settings", {method:"POST", body:{commission:v}})
+      .then(() => { toast(`Commission set to ${v}%.`); state.adminData = null; render(); })
+      .catch(err => toast(err.message));
+    return;
+  }
   if(el && el.dataset.adminOpen){
     state.adminOpen = state.adminOpen === el.dataset.adminOpen ? null : el.dataset.adminOpen;
     state.adminBank = null;
@@ -2220,6 +2350,19 @@ document.addEventListener("click", e => {
         go("#/staff");
       })
       .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.copy !== undefined){
+    const val = el.dataset.copy;
+    const done = () => { const old = el.textContent; el.textContent = "Copied"; setTimeout(() => el.textContent = old, 1400); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(val).then(done).catch(() => toast(val));
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = val; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch { toast(val); }
+      ta.remove();
+    }
     return;
   }
   if(e.target.id === "resend"){
