@@ -60,10 +60,23 @@ function decrypt(blob) {
 const maskAccount = n => (!n ? "" : "•••• " + String(n).slice(-4));
 
 /* ---------------- storage ---------------- */
-const EMPTY = { applications: [], tutors: [], bookings: [], holds: [], waitlist: [] };
+const EMPTY = { applications: [], tutors: [], bookings: [], holds: [], waitlist: [], admins: [], settings: {} };
+
+// Fills in anything a document saved by an older version is missing. Runs on every
+// load, including documents pulled out of Postgres, so upgrades never crash.
+function hydrate(d) {
+  for (const [k, v] of Object.entries(EMPTY))
+    if (d[k] === undefined || d[k] === null) d[k] = Array.isArray(v) ? [] : {};
+  if (!Array.isArray(d.settings.subjects) || !d.settings.subjects.length)
+    d.settings.subjects = DEFAULT_SUBJECTS.map(x => ({
+      ...x, active: true, qualifiers: SUBJECT_QUALIFIERS[x.id] || [x.name.toLowerCase()]
+    }));
+  if (typeof d.settings.commission !== "number") d.settings.commission = DEFAULT_COMMISSION;
+  return d;
+}
 function load() {
-  try { return { ...EMPTY, ...JSON.parse(fs.readFileSync(DB_PATH, "utf8")) }; }
-  catch { return JSON.parse(JSON.stringify(EMPTY)); }
+  try { return hydrate({ ...EMPTY, ...JSON.parse(fs.readFileSync(DB_PATH, "utf8")) }); }
+  catch { return hydrate(JSON.parse(JSON.stringify(EMPTY))); }
 }
 /* ---------------- optional Postgres ----------------
    Set DATABASE_URL and the whole document lives in Postgres instead of a file,
@@ -74,11 +87,14 @@ let pg = null;
 async function initPg(ClientOverride) {
   if (!DATABASE_URL) return false;
   const { Client } = ClientOverride ? { Client: ClientOverride } : require("pg");
-  pg = new Client({ connectionString: DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  // Strip sslmode from the URL and set SSL explicitly. Otherwise pg logs a
+  // deprecation warning about sslmode aliases on every boot.
+  const url = DATABASE_URL.replace(/[?&]sslmode=[^&]*/g, "").replace(/\?$/, "");
+  pg = new Client({ connectionString: url, ssl: { require: true, rejectUnauthorized: false } });
   await pg.connect();
   await pg.query("CREATE TABLE IF NOT EXISTS store (id int PRIMARY KEY, doc jsonb NOT NULL)");
   const r = await pg.query("SELECT doc FROM store WHERE id = 1");
-  if (r.rows.length) db = { ...EMPTY, ...r.rows[0].doc };
+  if (r.rows.length) { db = hydrate({ ...EMPTY, ...r.rows[0].doc }); await writePg(); }
   else await pg.query("INSERT INTO store (id, doc) VALUES (1, $1)", [JSON.stringify(db)]);
   return true;
 }
@@ -92,7 +108,7 @@ function save(db) {
   if (pg) { writePg().catch(e => console.error("Could not write to the database:", e.message)); return; }
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
-let db = load();
+let db = JSON.parse(JSON.stringify(EMPTY));   // filled in by hydrate() once the defaults below exist
 
 /* ---------------- the admin account ----------------
    Seeded once, never listed as a tutor. Change the password from the
@@ -100,11 +116,9 @@ let db = load();
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "argandtutors@gmail.com").toLowerCase();
 const ADMIN_DEFAULT_PASSWORD = process.env.ADMIN_PASSWORD || "Confazzled28@";
 const DEFAULT_COMMISSION = Math.min(0.9, Math.max(0, Number(process.env.PLATFORM_COMMISSION ?? 0.2)));
-if (!db.settings) db.settings = {};
-if (db.settings.commission === undefined) db.settings.commission = DEFAULT_COMMISSION;
 const commission = () => Math.min(0.9, Math.max(0, Number(db.settings.commission)));
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL || OWNER_EMAIL;
-if (!Array.isArray(db.admins)) db.admins = [];
+
 function ensureAdmin() {
   let a = db.admins.find(x => x.email === ADMIN_EMAIL);
   if (!a) {
@@ -450,16 +464,14 @@ const SUBJECT_QUALIFIERS = {
   7: ["physics"],
   8: ["computer science", "computing", "computer studies"]
 };
-if (!Array.isArray(db.settings.subjects) || !db.settings.subjects.length) {
-  db.settings.subjects = DEFAULT_SUBJECTS.map(x => ({
-    ...x, active: true, qualifiers: SUBJECT_QUALIFIERS[x.id] || [x.name.toLowerCase()]
-  }));
-  save(db);
-}
+
 const allSubjects = () => db.settings.subjects;
 const activeSubjects = () => db.settings.subjects.filter(x => x.active !== false);
-const subjectById = id => db.settings.subjects.find(s => s.id === Number(id));
+const subjectById = id => ((db.settings && db.settings.subjects) || []).find(s => s.id === Number(id));
 const nextSubjectId = () => db.settings.subjects.reduce((m, x) => Math.max(m, x.id), 0) + 1;
+
+// everything hydrate() needs is now declared, so read the stored document
+db = load();
 
 // Does an A* in one of these grades qualify someone to teach this subject?
 function gradeQualifies(subject, grades) {
@@ -1416,6 +1428,10 @@ server.listen(PORT, () => {
 // Reminders: one a day before, one an hour before. Flags on the booking stop
 // anything being sent twice, even if the server restarts.
 async function sendReminders() {
+  try { await runReminders(); }
+  catch (err) { console.error("Reminder sweep failed (the site is unaffected):", err.message); }
+}
+async function runReminders() {
   const now = Date.now();
   for (const b of db.bookings) {
     if (b.status !== "confirmed") continue;
