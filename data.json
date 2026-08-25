@@ -315,9 +315,130 @@
       "usingDefaultPassword": false,
       "createdAt": "2026-08-22T19:31:18.298Z",
       "session": {
-        "token": "3d99b948836410fa546c1bb930dd72e94edeac568356d4f6",
-        "expires": 1788032106266
+        "token": "564b7ca89f6680f397a5a5da5cb3da4bccea90e1a02591ef",
+        "expires": 1788278642668
       }
     }
-  ]
+  ],
+  "settings": {
+    "commission": 0.2,
+    "subjects": [
+      {
+        "id": 1,
+        "name": "GCSE Maths",
+        "area": "Maths",
+        "level": "GCSE",
+        "price": 30,
+        "icon": "∑",
+        "desc": "Foundation and Higher tier. Algebra, geometry, ratio and probability, with past-paper technique every session.",
+        "active": true,
+        "qualifiers": [
+          "maths",
+          "mathematics",
+          "further maths",
+          "further mathematics"
+        ]
+      },
+      {
+        "id": 2,
+        "name": "GCSE Further Maths",
+        "area": "Maths",
+        "level": "GCSE",
+        "price": 32,
+        "icon": "π",
+        "desc": "AQA Level 2 Certificate. Matrices, calculus foundations and advanced algebra for pupils heading to A-Level.",
+        "active": true,
+        "qualifiers": [
+          "further maths",
+          "further mathematics"
+        ]
+      },
+      {
+        "id": 3,
+        "name": "GCSE Physics",
+        "area": "Physics",
+        "level": "GCSE",
+        "price": 30,
+        "icon": "⚛",
+        "desc": "Separate and combined award. Forces, electricity, waves and the required practicals.",
+        "active": true,
+        "qualifiers": [
+          "physics"
+        ]
+      },
+      {
+        "id": 4,
+        "name": "GCSE Computer Science",
+        "area": "Computing",
+        "level": "GCSE",
+        "price": 31,
+        "icon": "⌨",
+        "desc": "Algorithms, data representation and Python, plus the written paper technique that trips people up.",
+        "active": true,
+        "qualifiers": [
+          "computer science",
+          "computing",
+          "computer studies"
+        ]
+      },
+      {
+        "id": 5,
+        "name": "A-Level Mathematics",
+        "area": "Maths",
+        "level": "A-Level",
+        "price": 36,
+        "icon": "∫",
+        "desc": "Pure, statistics and mechanics across Edexcel, AQA and OCR. Built around your last mock paper.",
+        "active": true,
+        "qualifiers": [
+          "maths",
+          "mathematics",
+          "further maths",
+          "further mathematics"
+        ]
+      },
+      {
+        "id": 6,
+        "name": "A-Level Further Maths",
+        "area": "Maths",
+        "level": "A-Level",
+        "price": 40,
+        "icon": "∂",
+        "desc": "Complex numbers, matrices, differential equations and the optional applied modules.",
+        "active": true,
+        "qualifiers": [
+          "further maths",
+          "further mathematics"
+        ]
+      },
+      {
+        "id": 7,
+        "name": "A-Level Physics",
+        "area": "Physics",
+        "level": "A-Level",
+        "price": 36,
+        "icon": "Ω",
+        "desc": "Mechanics, fields, thermal and particle physics, with heavy drilling on six-mark explanation questions.",
+        "active": true,
+        "qualifiers": [
+          "physics"
+        ]
+      },
+      {
+        "id": 8,
+        "name": "A-Level Computer Science",
+        "area": "Computing",
+        "level": "A-Level",
+        "price": 38,
+        "icon": "{}",
+        "desc": "Data structures, OOP, theory of computation and NEA supervision from specification to evaluation.",
+        "active": true,
+        "qualifiers": [
+          "computer science",
+          "computing",
+          "computer studies"
+        ]
+      }
+    ]
+  }
 }
