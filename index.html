@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Argand Tutors</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232743c4'/%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M8 25V7M8 25h17'/%3E%3Cpath d='M8 25L20 13'/%3E%3C/g%3E%3Ccircle cx='20' cy='13' r='3.4' fill='white'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232743c4'/%3E%3Cg fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round'%3E%3Cpath d='M8 25V7M8 25h17'/%3E%3Cpath d='M8 25L20 13'/%3E%3C/g%3E%3Ccircle cx='20' cy='13' r='3.4' fill='white'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#2743c4">
+<meta name="description" content="One to one GCSE and A-Level tutoring in maths, further maths, physics and computer science, from tutors who sat these papers recently.">
 <style>
 :root{
   --canvas:#f4f2ee;--card:#ffffff;--line:rgba(0,0,0,.08);--line-strong:rgba(0,0,0,.15);
@@ -562,7 +566,7 @@ const state = {
   dayIndex:0, slotHour:null, lengthMins:60,
   step:null, name:"", email:"", phone:"", promo:"", promoInput:"", promoPercent:0,
   rescheduleRef:null, signedIn:null, isAdmin:false, adminData:null, adminOpen:null,
-  adminBookings:null, appCode:null, showPw:false, token:null,
+  adminBookings:null, adminSubjects:null, appCode:null, showPw:false, token:null,
   repeat:1, waitHour:null, noteRef:null,
   applyStep:"form", applyId:null, applyCode:null, applyPicked:[], applyErr:""
 };
@@ -1362,6 +1366,39 @@ function viewAdmin(){
     </div>
 
     <div class="card">
+      <div class="card-head">Subjects offered
+        <button class="btn btn-outline btn-sm" data-subj-toggle>${state.adminSubjects ? "Close" : "Manage"}</button></div>
+      ${state.adminSubjects ? `
+        ${state.adminSubjects.map(sj => `<div class="avrow">
+          <span style="flex:1 1 160px;min-width:0;">${esc(sj.name)}
+            <div class="hint" style="margin:0;">${esc(sj.level)} · ${esc(sj.area)}${sj.active === false ? " · hidden" : ""}</div></span>
+          <span class="muted">£</span>
+          <input type="number" min="5" max="300" data-sprice="${sj.id}" value="${sj.price}"
+            style="width:76px;height:34px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:15px;">
+          <button class="btn btn-outline btn-sm" data-ssave="${sj.id}">Save</button>
+          <button class="btn btn-danger btn-sm" data-sdel="${sj.id}">Remove</button>
+        </div>`).join("")}
+        <div class="card-pad" style="border-top:1px solid var(--line);">
+          <div style="font-weight:600;margin-bottom:8px;">Add a subject</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <input id="ns-name" placeholder="A-Level Chemistry" style="flex:1 1 200px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+            <select id="ns-level" style="height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 6px;">
+              <option>GCSE</option><option>A-Level</option></select>
+            <input id="ns-area" placeholder="Area, e.g. Science" style="flex:1 1 130px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+            <input id="ns-price" type="number" min="5" max="300" value="32" placeholder="£/hr" style="width:80px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+            <input id="ns-qual" placeholder="A* subject that qualifies, e.g. chemistry" style="flex:1 1 240px;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;">
+            <button class="btn btn-primary btn-sm" id="ns-add">Add subject</button>
+          </div>
+          <div class="hint" style="margin-top:8px;">
+            The qualifying subject is what a tutor must have an A* in before they can pick this.
+            Removing a subject that already has bookings hides it instead, so history stays readable.
+          </div>
+        </div>` : ""}
+    </div>
+
+    <div class="card">
       <div class="card-head">Recent bookings
         <a class="btn btn-outline btn-sm" href="/api/admin/export.csv" download id="csv-link">Export CSV</a></div>
       ${!state.adminBookings ? `<div class="empty">Loading…</div>`
@@ -1417,6 +1454,7 @@ function adminPanel(t){
       <button class="btn btn-primary btn-sm" data-admin-save="${t.id}">Save changes</button>
       <button class="btn ${t.active ? "btn-danger" : "btn-outline"} btn-sm" data-admin-toggle="${t.id}">
         ${t.active ? "Deactivate" : "Reactivate"}</button>
+      <button class="btn btn-danger btn-sm" data-admin-delete="${t.id}">Delete permanently</button>
     </div>
   </div>`;
 }
@@ -1649,6 +1687,19 @@ state.applyForm = {name:"", email:"", pw:"", uni:"", course:"", year:"Second yea
                    bankHolder:"", bankSort:"", bankAcc:"",
                    grades:[{s:"",g:"A*"},{s:"",g:"A"},{s:"",g:"A"}]};
 
+// Mirrors the server's rule so the form can grey out what isn't allowed.
+// The server checks again on submit — this is only to save people the trouble.
+function qualifiesFor(subject, grades){
+  const stars = (grades || [])
+    .filter(g => String(g.g || g.grade).trim() === "A*")
+    .map(g => String(g.s || g.subject || "").toLowerCase().replace(/[^a-z ]/g, "").trim())
+    .filter(Boolean);
+  if(!stars.length) return false;
+  const want = (subject.qualifiers && subject.qualifiers.length)
+    ? subject.qualifiers : [String(subject.name).toLowerCase()];
+  return stars.some(got => want.some(w => got.includes(w)));
+}
+
 function readApplyForm(){
   const f = state.applyForm, g = id => document.getElementById(id);
   if(!g("a-name")) return;
@@ -1795,7 +1846,18 @@ function viewApply(){
 
           <div class="field" id="fa-subjects"><label>Subjects you'd teach</label>
             <div class="filters" style="padding:4px 0 0;">
-              ${SUBJECTS.map(sj => `<button class="chip ${state.applyPicked.includes(sj.id)?"is-on":""}" data-apick="${sj.id}">${sj.name}</button>`).join("")}
+              ${SUBJECTS.map(sj => {
+                const ok = qualifiesFor(sj, f.grades);
+                return `<button class="chip ${state.applyPicked.includes(sj.id)?"is-on":""}"
+                  data-apick="${sj.id}" ${ok ? "" : "disabled"}
+                  style="${ok ? "" : "opacity:.4;cursor:not-allowed;"}"
+                  title="${ok ? "" : "Needs an A* in " + esc((sj.qualifiers||[sj.name])[0])}">${sj.name}</button>`;
+              }).join("")}
+            </div>
+            <div class="hint" style="margin-top:6px;">
+              ${f.grades.some(g => g.g === "A*" && g.s.trim())
+                ? "Only subjects matching an A* above can be selected. Change your grades and the list updates."
+                : "Enter your A-Level results above and the subjects you can teach will unlock."}
             </div>
             <div class="err" style="margin-top:6px;">Pick at least one subject.</div></div>
 
@@ -2122,7 +2184,7 @@ function drawModal(){
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save],[data-copy],[data-app-code]");
+  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save],[data-copy],[data-app-code],[data-subj-toggle],[data-ssave],[data-sdel],[data-admin-delete]");
   if(el){
     if(el.dataset.signout !== undefined){
       state.signedIn = null; state.isAdmin = false; state.adminData = null; state.token = null;
@@ -2261,7 +2323,10 @@ document.addEventListener("click", e => {
     }).then(() => {
       state.applyErr = ""; state.applyStep = "code"; render();
     }).catch(err => {
-      state.applyErr = err.message; render();
+      state.applyErr = err.message;
+      const btn = document.getElementById("apply-submit");
+      if(btn){ btn.disabled = false; btn.textContent = "Submit application"; }
+      render();
     });
     return;
   }
@@ -2332,6 +2397,71 @@ document.addEventListener("click", e => {
         toast("Downloaded.");
       })
       .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.subjToggle !== undefined){
+    if(state.adminSubjects){ state.adminSubjects = null; return render(); }
+    api("/api/admin/subjects").then(list => { state.adminSubjects = list; render(); }).catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.ssave){
+    const id = el.dataset.ssave;
+    const price = +document.querySelector(`[data-sprice="${id}"]`).value;
+    api(`/api/admin/subjects/${id}`, {method:"PATCH", body:{price}})
+      .then(() => { toast("Price updated."); state.adminSubjects = null; state.adminData = null;
+        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); }); })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.sdel){
+    const id = el.dataset.sdel;
+    const sj = state.adminSubjects.find(x => String(x.id) === id);
+    if(!confirm(`Remove ${sj ? sj.name : "this subject"} from the site?`)) return;
+    api(`/api/admin/subjects/${id}`, {method:"DELETE"})
+      .then(r => {
+        toast(r.message || "Subject removed.");
+        state.adminData = null;
+        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); });
+        api("/api/config").then(c => { SUBJECTS.length = 0; SUBJECTS.push(...c.subjects); });
+      })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(e.target.id === "ns-add"){
+    const name = document.getElementById("ns-name").value.trim();
+    if(name.length < 3) return toast("Give the subject a name.");
+    api("/api/admin/subjects", {method:"POST", body:{
+      name, level: document.getElementById("ns-level").value,
+      area: document.getElementById("ns-area").value.trim() || "Other",
+      price: +document.getElementById("ns-price").value || 32,
+      qualifiers: [document.getElementById("ns-qual").value.trim() ||
+        name.replace(/^(GCSE|A-Level)\s+/i, "")]
+    }})
+      .then(sj => {
+        toast(`${sj.name} added.`);
+        state.adminData = null;
+        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); });
+        api("/api/config").then(c => { SUBJECTS.length = 0; SUBJECTS.push(...c.subjects); });
+      })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.adminDelete){
+    const id = el.dataset.adminDelete;
+    const t = state.adminData.tutors.find(x => x.id === id);
+    if(!confirm(`Permanently delete ${t ? t.name : "this tutor"}? Their account, bank details and application are erased. Past bookings stay, with their name kept for your records. This cannot be undone.`)) return;
+    api(`/api/admin/tutors/${id}`, {method:"DELETE", body:{}})
+      .then(r => {
+        toast(r.upcoming ? `Deleted. ${r.upcoming} upcoming session${r.upcoming===1?"":"s"} still exist — contact those students.` : "Account deleted.");
+        state.adminData = null; state.adminOpen = null; render();
+      })
+      .catch(err => {
+        if(/still owe/i.test(err.message) && confirm(err.message + "\\n\\nDelete anyway?")){
+          api(`/api/admin/tutors/${id}`, {method:"DELETE", body:{force:true}})
+            .then(() => { toast("Account deleted."); state.adminData = null; render(); })
+            .catch(e2 => toast(e2.message));
+        } else toast(err.message);
+      });
     return;
   }
   if(el && el.dataset.appCode){
@@ -2549,6 +2679,14 @@ document.addEventListener("click", e => {
 });
 
 document.addEventListener("change", e => {
+  if(/^a-gg\d$/.test(e.target.id || "")){
+    readApplyForm();
+    state.applyPicked = state.applyPicked.filter(id => {
+      const sj = subject(id);
+      return sj && qualifiesFor(sj, state.applyForm.grades);
+    });
+    return render();
+  }
   const t = state.signedIn ? tutor(state.signedIn) : null;
   if(!t) return;
   if(e.target.id === "p-photo"){
@@ -2609,6 +2747,19 @@ document.addEventListener("input", e => {
     e.target.value = d.replace(/(\d{2})(?=\d)/g, "$1-");
   }
   if(e.target.id === "a-bank-acc") e.target.value = e.target.value.replace(/\D/g, "").slice(0, 8);
+  if(/^a-gs\d$/.test(e.target.id || "")){
+    clearTimeout(window.__gradeTimer);
+    window.__gradeTimer = setTimeout(() => {
+      readApplyForm();
+      // drop anything they'd picked that their grades no longer cover
+      state.applyPicked = state.applyPicked.filter(id => {
+        const sj = subject(id);
+        return sj && qualifiesFor(sj, state.applyForm.grades);
+      });
+      render();
+      document.getElementById(e.target.id)?.focus();
+    }, 700);
+  }
 });
 
 document.addEventListener("keydown", e => {

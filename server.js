@@ -244,7 +244,15 @@ async function createApplication(req, res, ip) {
   if (clean(b.bankHolder).length < 2) errors.push("bankHolder");
   if (clean(b.bankSortCode).replace(/\D/g, "").length !== 6) errors.push("bankSortCode");
   if (clean(b.bankAccountNumber).replace(/\D/g, "").length !== 8) errors.push("bankAccountNumber");
+
   if (errors.length) return json(res, 400, { error: "Some details are missing or invalid.", fields: errors });
+  // an A* in the subject is the entry requirement, so enforce it per subject
+  const chosen = (Array.isArray(b.subjectIds) ? b.subjectIds : []).map(subjectById).filter(Boolean);
+  const unqualified = chosen.filter(sj => !gradeQualifies(sj, b.grades));
+  if (unqualified.length) return json(res, 400, {
+    error: "You can only teach subjects you got an A* in: " + unqualified.map(x => x.name).join(", "),
+    fields: ["subjects"], unqualified: unqualified.map(x => x.id)
+  });
 
   const email = String(b.email).trim().toLowerCase();
   if (db.tutors.some(t => t.email === email && t.active))
@@ -411,7 +419,7 @@ async function login(req, res, ip) {
 /* ============================================================
    CATALOGUE — edit these to change what you offer. Prices per hour, in pounds.
    ============================================================ */
-const SUBJECTS = [
+const DEFAULT_SUBJECTS = [
   { id:1, name:"GCSE Maths", area:"Maths", level:"GCSE", price:30, icon:"\u2211",
     desc:"Foundation and Higher tier. Algebra, geometry, ratio and probability, with past-paper technique every session." },
   { id:2, name:"GCSE Further Maths", area:"Maths", level:"GCSE", price:32, icon:"\u03c0",
@@ -430,7 +438,40 @@ const SUBJECTS = [
     desc:"Data structures, OOP, theory of computation and NEA supervision from specification to evaluation." }
 ];
 const LENGTHS = [{mins:30,mult:0.6,blocks:1},{mins:60,mult:1,blocks:1},{mins:90,mult:1.45,blocks:2}];
-const subjectById = id => SUBJECTS.find(s => s.id === Number(id));
+// Subjects live in the database so the admin can change them. Each carries the
+// A-Level subject names that qualify someone to teach it.
+const SUBJECT_QUALIFIERS = {
+  1: ["maths", "mathematics", "further maths", "further mathematics"],
+  2: ["further maths", "further mathematics"],
+  3: ["physics"],
+  4: ["computer science", "computing", "computer studies"],
+  5: ["maths", "mathematics", "further maths", "further mathematics"],
+  6: ["further maths", "further mathematics"],
+  7: ["physics"],
+  8: ["computer science", "computing", "computer studies"]
+};
+if (!Array.isArray(db.settings.subjects) || !db.settings.subjects.length) {
+  db.settings.subjects = DEFAULT_SUBJECTS.map(x => ({
+    ...x, active: true, qualifiers: SUBJECT_QUALIFIERS[x.id] || [x.name.toLowerCase()]
+  }));
+  save(db);
+}
+const allSubjects = () => db.settings.subjects;
+const activeSubjects = () => db.settings.subjects.filter(x => x.active !== false);
+const subjectById = id => db.settings.subjects.find(s => s.id === Number(id));
+const nextSubjectId = () => db.settings.subjects.reduce((m, x) => Math.max(m, x.id), 0) + 1;
+
+// Does an A* in one of these grades qualify someone to teach this subject?
+function gradeQualifies(subject, grades) {
+  const stars = (grades || []).filter(g => String(g.grade).trim() === "A*")
+    .map(g => String(g.subject || "").toLowerCase().replace(/[^a-z ]/g, "").trim());
+  if (!stars.length) return false;
+  const want = (subject.qualifiers && subject.qualifiers.length)
+    ? subject.qualifiers : [String(subject.name).toLowerCase()];
+  // one-way on purpose: "further mathematics" contains "mathematics", so matching
+  // both directions would let a plain Maths A* unlock Further Maths
+  return stars.some(got => want.some(w => got.includes(w)));
+}
 
 /* Promo codes. Add more by copying a line. `percent` is the discount.
    Set `expires` to an ISO date string to make one temporary. */
@@ -1002,7 +1043,7 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/tutors" && req.method === "GET")
       return json(res, 200, db.tutors.filter(t => t.active).map(publicTutor));
     if (p === "/api/config")
-      return json(res, 200, { brand: BRAND, subjects: SUBJECTS, lengths: LENGTHS,
+      return json(res, 200, { brand: BRAND, subjects: activeSubjects(), lengths: LENGTHS,
         paymentsEnabled: PAYMENTS_ENABLED, verifyEmail: VERIFY_EMAIL, contactEmail: CONTACT_EMAIL });
     if (p === "/api/holds" && req.method === "POST") return await createHold(req, res, ip);
     if (p === "/api/holds/confirm" && req.method === "POST") return await confirmHold(req, res);
@@ -1180,6 +1221,83 @@ const server = http.createServer(async (req, res) => {
         if (!a) return json(res, 404, { error: "No such application." });
         a.status = "rejected"; save(db);
         return json(res, 200, { ok: true });
+      }
+
+      if (p === "/api/admin/subjects" && req.method === "GET")
+        return json(res, 200, allSubjects());
+
+      if (p === "/api/admin/subjects" && req.method === "POST") {
+        const body = await readBody(req);
+        const name = clean(body.name, 60);
+        if (name.length < 3) return json(res, 400, { error: "Give the subject a name." });
+        if (allSubjects().some(x => x.name.toLowerCase() === name.toLowerCase()))
+          return json(res, 409, { error: "There's already a subject with that name." });
+        const price = Math.max(5, Math.min(300, Number(body.price) || 30));
+        const sj = {
+          id: nextSubjectId(), name,
+          area: clean(body.area, 30) || "Other",
+          level: clean(body.level, 20) || "A-Level",
+          price, icon: clean(body.icon, 4) || "\u2022",
+          desc: clean(body.desc, 300) || "One to one sessions in " + name + ".",
+          qualifiers: (Array.isArray(body.qualifiers) && body.qualifiers.length
+            ? body.qualifiers : [name.replace(/^(GCSE|A-Level)\s+/i, "")])
+            .map(x => String(x).toLowerCase().trim()).filter(Boolean),
+          active: true
+        };
+        db.settings.subjects.push(sj); save(db);
+        return json(res, 201, sj);
+      }
+
+      if ((am = p.match(/^\/api\/admin\/subjects\/(\d+)$/)) && req.method === "PATCH") {
+        const sj = subjectById(am[1]);
+        if (!sj) return json(res, 404, { error: "No such subject." });
+        const body = await readBody(req);
+        if (body.name !== undefined && clean(body.name, 60).length >= 3) sj.name = clean(body.name, 60);
+        if (body.price !== undefined) sj.price = Math.max(5, Math.min(300, Number(body.price) || sj.price));
+        if (body.desc !== undefined) sj.desc = clean(body.desc, 300);
+        if (body.area !== undefined) sj.area = clean(body.area, 30);
+        if (body.level !== undefined) sj.level = clean(body.level, 20);
+        if (body.icon !== undefined) sj.icon = clean(body.icon, 4);
+        if (body.active !== undefined) sj.active = !!body.active;
+        if (Array.isArray(body.qualifiers))
+          sj.qualifiers = body.qualifiers.map(x => String(x).toLowerCase().trim()).filter(Boolean);
+        save(db);
+        return json(res, 200, sj);
+      }
+
+      if ((am = p.match(/^\/api\/admin\/subjects\/(\d+)$/)) && req.method === "DELETE") {
+        const sj = subjectById(am[1]);
+        if (!sj) return json(res, 404, { error: "No such subject." });
+        const used = db.bookings.some(b => b.subjectId === sj.id);
+        if (used) {
+          // bookings still point at it, so hide it rather than break their history
+          sj.active = false; save(db);
+          return json(res, 200, { hidden: true,
+            message: sj.name + " has past bookings, so it's been hidden rather than deleted." });
+        }
+        db.settings.subjects = db.settings.subjects.filter(x => x.id !== sj.id);
+        for (const t of db.tutors) t.subjectIds = (t.subjectIds || []).filter(id => id !== sj.id);
+        save(db);
+        return json(res, 200, { deleted: true });
+      }
+
+      if ((am = p.match(/^\/api\/admin\/tutors\/([^/]+)$/)) && req.method === "DELETE") {
+        const t = db.tutors.find(x => x.id === am[1]);
+        if (!t) return json(res, 404, { error: "No such tutor." });
+        const owed = earningsFor(t.id).owed;
+        const body = await readBody(req).catch(() => ({}));
+        if (owed > 0 && !body.force)
+          return json(res, 409, { error: "You still owe " + money(owed) + ". Settle up first, or confirm again to delete anyway.", owed });
+        const upcoming = db.bookings.filter(b => b.tutorId === t.id && b.status === "confirmed" &&
+          new Date(b.day + "T23:59:59Z").getTime() > Date.now());
+        // keep the booking history readable, but drop everything personal
+        for (const b of db.bookings) if (b.tutorId === t.id) b.tutorName = t.name;
+        db.tutors = db.tutors.filter(x => x.id !== t.id);
+        db.applications = db.applications.filter(a => a.email !== t.email);
+        db.waitlist = db.waitlist.filter(w => w.tutorId !== t.id);
+        save(db);
+        console.log(`[audit] ${new Date().toISOString()} admin deleted the account for ${t.name} (${t.email})`);
+        return json(res, 200, { deleted: true, upcoming: upcoming.length });
       }
 
       if (p === "/api/admin/password" && req.method === "POST") {
