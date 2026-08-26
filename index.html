@@ -566,9 +566,9 @@ const state = {
   dayIndex:0, slotHour:null, lengthMins:60,
   step:null, name:"", email:"", phone:"", promo:"", promoInput:"", promoPercent:0,
   rescheduleRef:null, signedIn:null, isAdmin:false, adminData:null, adminOpen:null,
-  adminBookings:null, adminSubjects:null, appCode:null, showPw:false, token:null,
+  adminBookings:null, adminSubjects:null, appOpen:null, appFull:null, showPw:false, token:null,
   repeat:1, waitHour:null, noteRef:null,
-  applyStep:"form", applyId:null, applyCode:null, applyPicked:[], applyErr:""
+  applyStep:"form", applyId:null, applyPicked:[], applyErr:""
 };
 const WAITLIST = [];
 // same-origin requests, so the base is empty; ONLINE says whether a server is behind us at all
@@ -1302,23 +1302,32 @@ function viewAdmin(){
       </div></div>` : ""}
 
     ${d.applications.length ? `<div class="card">
-      <div class="card-head">Waiting for approval<span class="sub">${d.applications.length}</span></div>
-      ${d.applications.map(a => `<div class="row" style="padding:12px 16px;">
-        <div class="row-body">
-          <div class="row-title" style="font-size:15px;">${esc(a.name)}</div>
-          <div class="row-meta">${esc(a.course)}, ${esc(a.university)} · ${esc(a.email)}</div>
-          <div class="row-note">${a.grades.map(g => `<span class="grade ${g.grade==="A*"?"top":""}"><b>${esc(g.grade)}</b>${esc(g.subject)}</span>`).join("")}</div>
+      <div class="card-head">Applications
+        <span class="sub">${d.applications.filter(a => a.status !== "held").length} new${
+          d.applications.some(a => a.status === "held") ? ", " + d.applications.filter(a => a.status === "held").length + " on hold" : ""}</span></div>
+      ${d.applications.map(a => `<div class="row" style="flex-direction:column;align-items:stretch;gap:10px;">
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div class="avatar avatar-md" style="background:${colourFor(a.name)};">${initials(a.name)}</div>
+          <div class="row-body">
+            <div class="row-title" style="font-size:15px;">${esc(a.name)}
+              ${a.status === "held" ? `<span class="badge badge-amber" style="margin-left:6px;">On hold</span>` : ""}</div>
+            <div class="row-meta">${esc(a.course)}, ${esc(a.university)}${a.year ? " · " + esc(a.year) : ""}</div>
+            <div class="row-note">${a.grades.map(g => `<span class="grade ${g.grade==="A*"?"top":""}"><b>${esc(g.grade)}</b>${esc(g.subject)}</span>`).join("")}</div>
+            ${a.note ? `<div class="notebox" style="margin-top:8px;"><b>Your note:</b> ${esc(a.note)}</div>` : ""}
+          </div>
+          <div class="row-side">
+            <span class="hint" style="margin:0;">${new Date(a.createdAt).toLocaleDateString("en-GB")}</span>
+          </div>
         </div>
-        <div class="row-side" style="gap:6px;">
-          ${state.appCode && state.appCode.id === a.id
-            ? `<span class="ref" style="font-size:15px;color:var(--green);font-weight:700;">${esc(state.appCode.code)}</span>
-               <button class="btn btn-outline btn-sm" data-copy="${esc(state.appCode.code)}">Copy code</button>`
-            : `<button class="btn btn-outline btn-sm" data-app-code="${a.id}">Show code</button>`}
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" data-app-open="${a.id}">
+            ${state.appOpen === a.id ? "Close" : "Read application"}</button>
         </div>
+        ${state.appOpen === a.id ? applicationPanel(a) : ""}
       </div>`).join("")}
       <div class="card-pad" style="border-top:1px solid var(--line);font-size:12px;color:var(--ink-2);">
-        Send the applicant their code to approve them. Ignore the application to reject it —
-        no account exists until the code is used.
+        Accepting creates the account immediately and emails them. Declining closes it and stops
+        their code working. Holding keeps it here with a note for later.
       </div>
     </div>` : ""}
 
@@ -1423,6 +1432,72 @@ function viewAdmin(){
       Owed is calculated from finished sessions only, after ${pct}% commission. Marking as paid records
       the settlement — make the bank transfer yourself, this doesn't move money.
     </div>`;
+}
+
+function applicationPanel(a){
+  const full = state.appFull && state.appFull.id === a.id ? state.appFull : null;
+  if(!full) return `<div style="background:#fafafa;border:1px solid var(--line);border-radius:6px;padding:12px;">
+    <div class="hint" style="margin:0;">Loading the full application…</div></div>`;
+
+  const row = (k, v) => `<div class="recap-row" style="padding:3px 0;"><span>${k}</span><b>${v}</b></div>`;
+  return `<div style="background:#fafafa;border:1px solid var(--line);border-radius:6px;padding:14px;">
+
+    <div style="font-weight:600;margin-bottom:6px;">Contact</div>
+    <div style="font-size:13px;margin-bottom:14px;">
+      ${row("Email", `<a href="mailto:${esc(full.email)}" style="color:var(--blue);">${esc(full.email)}</a>`)}
+      ${row("Phone", full.phone ? esc(full.phone) : "not given")}
+      ${row("Applied", new Date(full.createdAt).toLocaleString("en-GB"))}
+      ${full.expiresAt ? row("Code expires", new Date(full.expiresAt).toLocaleDateString("en-GB")) : ""}
+    </div>
+
+    <div style="font-weight:600;margin-bottom:6px;">Studying</div>
+    <div style="font-size:13px;margin-bottom:14px;">
+      ${row("Course", esc(full.course))}
+      ${row("University", esc(full.university))}
+      ${row("Year", esc(full.year || "not given"))}
+    </div>
+
+    <div style="font-weight:600;margin-bottom:6px;">A-Level results</div>
+    <div class="grades" style="margin-bottom:14px;">
+      ${full.grades.map(g => `<span class="grade ${g.grade==="A*"?"top":""}"><b>${esc(g.grade)}</b>${esc(g.subject)}</span>`).join("")}
+    </div>
+
+    <div style="font-weight:600;margin-bottom:6px;">Wants to teach</div>
+    <div class="row-note" style="margin:0 0 14px;">
+      ${(full.subjectNames || []).map(n => `<span class="badge badge-blue">${esc(n)}</span>`).join("") || "<span class='hint' style='margin:0;'>none listed</span>"}
+    </div>
+
+    <div style="font-weight:600;margin-bottom:6px;">Why they'd be good at this</div>
+    <div style="font-size:13px;color:var(--ink-2);background:#fff;border:1px solid var(--line);
+         border-radius:6px;padding:10px;margin-bottom:14px;white-space:pre-wrap;">${esc(full.bio)}</div>
+
+    <div style="font-weight:600;margin-bottom:6px;">Bank details</div>
+    <div style="font-size:13px;color:var(--ink-2);margin-bottom:14px;">
+      ${full.bank ? `${esc(full.bank.holder)} · account ending ${esc(full.bank.last4)}
+        <div class="hint" style="margin:2px 0 0;">Full details are visible once they're a tutor.</div>`
+      : "none given"}
+    </div>
+
+    ${full.alreadyHasAccount ? `<div class="note" style="margin:0 0 14px;">
+      There's already an active account with this email. Accepting will update it rather than
+      creating a second one.</div>` : ""}
+
+    <div style="border-top:1px solid var(--line);padding-top:12px;">
+      <div style="font-weight:600;margin-bottom:8px;">Decision</div>
+      <input id="app-note" placeholder="Note or reason, for your records only"
+        value="${esc(full.note || "")}"
+        style="width:100%;height:36px;border:1px solid var(--line-strong);border-radius:4px;padding:0 8px;font-size:14px;margin-bottom:10px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" data-app-accept="${full.id}">Accept and create account</button>
+        <button class="btn btn-outline btn-sm" data-app-hold="${full.id}">
+          ${a.status === "held" ? "Move back to new" : "Hold for later"}</button>
+        <button class="btn btn-danger btn-sm" data-app-decline="${full.id}">Decline</button>
+      </div>
+      <div class="hint" style="margin-top:8px;">
+        Declining emails them a short, polite note. Your reason above is never sent.
+      </div>
+    </div>
+  </div>`;
 }
 
 function adminPanel(t){
@@ -1715,7 +1790,6 @@ function readApplyForm(){
 async function postApplication(payload){
   if(!ONLINE){                                // opened as a file, no server behind it
     state.applyId = "demo-" + Date.now();
-    state.applyCode = String(Math.floor(100000 + Math.random()*900000));
     return {demo:true};
   }
   const r = await fetch(API + "/api/applications", {
@@ -1725,13 +1799,6 @@ async function postApplication(payload){
   state.applyId = j.id;
   return j;
 }
-async function verifyApplication(code){
-  if(!ONLINE) return code === state.applyCode;
-  const r = await fetch(`${API}/api/applications/${encodeURIComponent(state.applyId)}/verify`, {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({code})});
-  return r.ok;
-}
-
 function viewContact(){
   const mail = CONFIG.contactEmail || "argandtutors@gmail.com";
   main.innerHTML = `
@@ -1759,13 +1826,13 @@ function viewContact(){
       <div class="card-head">Common questions</div>
       ${[
         ["Do I need an account to book?",
-         "No. Give a name and an email, confirm the code we send, and everything you need arrives by email — including a private link for cancelling."],
+         "No. Give a name and an email and book — nothing to remember. Your booking details and a private link for cancelling arrive by email."],
         ["What if I need to cancel?",
          "Free up to 24 hours before, using the link in your confirmation email. Inside 24 hours the session is charged in full."],
         ["Can I book a one-off session?",
          "Yes. Most students booking around self-teaching do exactly that — book when you're stuck rather than committing weekly."],
         ["Do you teach a subject that isn't listed?",
-         "We stick to maths, further maths, physics and computer science, at GCSE and A-Level. Email us if you're close to that and we'll tell you honestly whether we can help."],
+         "Email us. If it's close to what we already cover we'll tell you honestly whether we can help."],
         ["How do I pay?",
          CONFIG.paymentsEnabled
            ? "By card at the end of booking. Card details go straight to our payment processor and never touch our site."
@@ -1787,7 +1854,7 @@ function viewContact(){
 function viewApply(){
   const f = state.applyForm;
   const step = state.applyStep;
-  const bar = n => `<div class="steps">${[1,2,3].map(i => `<span class="${i<=n?"on":""}"></span>`).join("")}</div>`;
+  const bar = n => `<div class="steps">${[1,2].map(i => `<span class="${i<=n?"on":""}"></span>`).join("")}</div>`;
 
   if(step === "form"){
     main.innerHTML = bar(1) === "" ? "" : `
@@ -1892,41 +1959,22 @@ function viewApply(){
     return;
   }
 
-  if(step === "code"){
-    main.innerHTML = `
-      <div class="card">
-        ${bar(2)}
-        <div class="card-pad">
-          <div style="font-size:20px;font-weight:600;">Application received</div>
-          <p style="color:var(--ink-2);">
-            Thanks ${esc(state.applyForm.name.split(" ")[0] || "")} — your application has gone to the owner.
-            If they're happy to take you on, they'll send you a six-digit confirmation code.
-            Enter it below to activate your account.
-          </p>
-          <div class="otp">${[0,1,2,3,4,5].map(i => `<input inputmode="numeric" maxlength="1" data-otp="${i}" aria-label="Digit ${i+1}">`).join("")}</div>
-          <div class="field" id="fa-code" style="text-align:center;"><div class="err" id="apply-code-err">That code isn't right.</div></div>
-          <button class="btn btn-primary btn-block" id="apply-verify">Activate my account</button>
-          <div class="auth-alt">Code not arrived yet? You can close this and come back to
-            <button data-go="#/apply">this page</button> later.</div>
-          ${state.applyCode ? `<div class="note"><b>Demo:</b> no server is running behind this page, so no email was sent.
-            The code the owner would have received is <b>${state.applyCode}</b>.</div>` : ""}
-        </div>
-      </div>`;
-    setTimeout(() => document.querySelector("[data-otp='0']")?.focus(), 30);
-    return;
-  }
-
   main.innerHTML = `
     <div class="card">
-      ${bar(3)}
+      ${bar(2)}
       <div class="card-pad done">
         <div class="tick">✓</div>
-        <div style="font-size:18px;font-weight:600;">You're in</div>
+        <div style="font-size:18px;font-weight:600;">Application sent</div>
         <p style="color:var(--ink-2);">
-          Your tutor account is active. Sign in to set your availability, add a photo and finish your profile —
-          you won't appear in the public list until your availability is set.
+          Thanks ${esc((state.applyForm.name || "").split(" ")[0])} — that's everything we need.
+          The owner reads every application personally, and you'll hear back either way,
+          usually within three working days.
         </p>
-        <button class="btn btn-primary" data-go="#/staff">Go to sign in</button>
+        <p style="color:var(--ink-2);font-size:13px;">
+          If you're accepted your account is created straight away, and we'll email you to sign in
+          with the password you just chose.
+        </p>
+        <button class="btn btn-outline" data-go="#/">Back to the site</button>
       </div>
     </div>`;
 }
@@ -2184,7 +2232,7 @@ function drawModal(){
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save],[data-copy],[data-app-code],[data-subj-toggle],[data-ssave],[data-sdel],[data-admin-delete]");
+  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save],[data-copy],[data-app-open],[data-app-accept],[data-app-hold],[data-app-decline],[data-subj-toggle],[data-ssave],[data-sdel],[data-admin-delete]");
   if(el){
     if(el.dataset.signout !== undefined){
       state.signedIn = null; state.isAdmin = false; state.adminData = null; state.token = null;
@@ -2321,7 +2369,7 @@ document.addEventListener("click", e => {
       bankSortCode:f.bankSort.replace(/\D/g, ""),
       bankAccountNumber:f.bankAcc.replace(/\D/g, "")
     }).then(() => {
-      state.applyErr = ""; state.applyStep = "code"; render();
+      state.applyErr = ""; state.applyStep = "done"; render();
     }).catch(err => {
       state.applyErr = err.message;
       const btn = document.getElementById("apply-submit");
@@ -2330,30 +2378,17 @@ document.addEventListener("click", e => {
     });
     return;
   }
-  if(e.target.id === "apply-verify"){
-    const code = [...document.querySelectorAll("[data-otp]")].map(i => i.value).join("");
-    if(code.length !== 6) return document.getElementById("fa-code").classList.add("has-err");
-    e.target.disabled = true; e.target.textContent = "Checking…";
-    Promise.resolve(verifyApplication(code)).then(ok => {
-      if(!ok){
-        state.applyErr = "";
-        const btn = document.getElementById("apply-verify");
-        if(btn){ btn.disabled = false; btn.textContent = "Activate my account"; }
-        document.getElementById("apply-code-err").textContent = "That code isn't right. Check it with the owner.";
-        return document.getElementById("fa-code").classList.add("has-err");
-      }
-      state.applyStep = "done"; toast("Account activated."); render();
-    });
-    return;
-  }
-
   if(e.target.id === "apply-promo"){
     captureDetails();
     const box = document.getElementById("i-promo");
     const code = box.value.trim().toUpperCase();
     const msg = document.getElementById("promo-msg");
     const field = document.getElementById("f-promo");
-    if(!code){ state.promo = ""; state.promoInput = ""; state.promoPercent = 0; field.classList.remove("has-err"); msg.innerHTML = ""; return drawModal(); }
+    if(!code){
+      state.promo = ""; state.promoInput = ""; state.promoPercent = 0;
+      field.classList.remove("has-err"); msg.innerHTML = "";
+      return drawModal();
+    }
     e.target.disabled = true;
     api("/api/promo", {method:"POST", body:{code}})
       .then(r => {
@@ -2362,8 +2397,8 @@ document.addEventListener("click", e => {
         drawModal();
       })
       .catch(() => {
-        state.promo = ""; state.promoInput = code; state.promoPercent = 0;   // keep what they typed, drop the discount
-        drawModal();                                   // redraw so the total is right again
+        state.promo = ""; state.promoInput = code; state.promoPercent = 0;
+        drawModal();
         const f2 = document.getElementById("f-promo");
         const m2 = document.getElementById("promo-msg");
         if(f2) f2.classList.add("has-err");
@@ -2371,6 +2406,7 @@ document.addEventListener("click", e => {
       });
     return;
   }
+
   if(e.target.id === "save-rates"){
     const t = tutor(state.signedIn), rates = {};
     document.querySelectorAll("[data-rate]").forEach(inp => {
@@ -2385,100 +2421,21 @@ document.addEventListener("click", e => {
     tutor(state.signedIn).rates = {};
     return saveMe({rates:{}}, "Back to the suggested prices.");
   }
-  if(e.target.id === "csv-link"){
-    e.preventDefault();
-    fetch(API + "/api/admin/export.csv", { headers: { Authorization: "Bearer " + state.token } })
-      .then(r => r.ok ? r.blob() : Promise.reject(new Error("Export failed")))
-      .then(blob => {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `argand-bookings-${iso(new Date())}.csv`;
-        a.click(); URL.revokeObjectURL(a.href);
-        toast("Downloaded.");
+  if(e.target.id === "admin-pw-save"){
+    const pw = document.getElementById("admin-pw").value;
+    if(pw.length < 10) return toast("Use at least 10 characters.");
+    api("/api/admin/password", {method:"POST", body:{password:pw}})
+      .then(() => {
+        toast("Password changed. Sign in again.");
+        state.isAdmin = false; state.adminData = null; state.token = null;
+        store.clear("argand_token"); store.clear("argand_role");
+        go("#/staff");
       })
       .catch(err => toast(err.message));
     return;
   }
-  if(el && el.dataset.subjToggle !== undefined){
-    if(state.adminSubjects){ state.adminSubjects = null; return render(); }
-    api("/api/admin/subjects").then(list => { state.adminSubjects = list; render(); }).catch(err => toast(err.message));
-    return;
-  }
-  if(el && el.dataset.ssave){
-    const id = el.dataset.ssave;
-    const price = +document.querySelector(`[data-sprice="${id}"]`).value;
-    api(`/api/admin/subjects/${id}`, {method:"PATCH", body:{price}})
-      .then(() => { toast("Price updated."); state.adminSubjects = null; state.adminData = null;
-        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); }); })
-      .catch(err => toast(err.message));
-    return;
-  }
-  if(el && el.dataset.sdel){
-    const id = el.dataset.sdel;
-    const sj = state.adminSubjects.find(x => String(x.id) === id);
-    if(!confirm(`Remove ${sj ? sj.name : "this subject"} from the site?`)) return;
-    api(`/api/admin/subjects/${id}`, {method:"DELETE"})
-      .then(r => {
-        toast(r.message || "Subject removed.");
-        state.adminData = null;
-        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); });
-        api("/api/config").then(c => { SUBJECTS.length = 0; SUBJECTS.push(...c.subjects); });
-      })
-      .catch(err => toast(err.message));
-    return;
-  }
-  if(e.target.id === "ns-add"){
-    const name = document.getElementById("ns-name").value.trim();
-    if(name.length < 3) return toast("Give the subject a name.");
-    api("/api/admin/subjects", {method:"POST", body:{
-      name, level: document.getElementById("ns-level").value,
-      area: document.getElementById("ns-area").value.trim() || "Other",
-      price: +document.getElementById("ns-price").value || 32,
-      qualifiers: [document.getElementById("ns-qual").value.trim() ||
-        name.replace(/^(GCSE|A-Level)\s+/i, "")]
-    }})
-      .then(sj => {
-        toast(`${sj.name} added.`);
-        state.adminData = null;
-        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); });
-        api("/api/config").then(c => { SUBJECTS.length = 0; SUBJECTS.push(...c.subjects); });
-      })
-      .catch(err => toast(err.message));
-    return;
-  }
-  if(el && el.dataset.adminDelete){
-    const id = el.dataset.adminDelete;
-    const t = state.adminData.tutors.find(x => x.id === id);
-    if(!confirm(`Permanently delete ${t ? t.name : "this tutor"}? Their account, bank details and application are erased. Past bookings stay, with their name kept for your records. This cannot be undone.`)) return;
-    api(`/api/admin/tutors/${id}`, {method:"DELETE", body:{}})
-      .then(r => {
-        toast(r.upcoming ? `Deleted. ${r.upcoming} upcoming session${r.upcoming===1?"":"s"} still exist — contact those students.` : "Account deleted.");
-        state.adminData = null; state.adminOpen = null; render();
-      })
-      .catch(err => {
-        if(/still owe/i.test(err.message) && confirm(err.message + "\\n\\nDelete anyway?")){
-          api(`/api/admin/tutors/${id}`, {method:"DELETE", body:{force:true}})
-            .then(() => { toast("Account deleted."); state.adminData = null; render(); })
-            .catch(e2 => toast(e2.message));
-        } else toast(err.message);
-      });
-    return;
-  }
-  if(el && el.dataset.appCode){
-    const id = el.dataset.appCode;
-    api(`/api/admin/applications/${id}`)
-      .then(a => { state.appCode = { id, code: a.code }; render(); })
-      .catch(err => toast(err.message));
-    return;
-  }
-  if(e.target.id === "admin-commission-save"){
-    const v = +document.getElementById("admin-commission").value;
-    if(!(v >= 0 && v <= 90)) return toast("Pick a number between 0 and 90.");
-    api("/api/admin/settings", {method:"POST", body:{commission:v}})
-      .then(() => { toast(`Commission set to ${v}%.`); state.adminData = null; render(); })
-      .catch(err => toast(err.message));
-    return;
-  }
+
+  /* ---------- admin console ---------- */
   if(el && el.dataset.adminOpen){
     state.adminOpen = state.adminOpen === el.dataset.adminOpen ? null : el.dataset.adminOpen;
     state.adminBank = null;
@@ -2516,32 +2473,141 @@ document.addEventListener("click", e => {
       .catch(err => toast(err.message));
     return;
   }
-  if(e.target.id === "admin-pw-save"){
-    const pw = document.getElementById("admin-pw").value;
-    if(pw.length < 10) return toast("Use at least 10 characters.");
-    api("/api/admin/password", {method:"POST", body:{password:pw}})
+
+  if(el && el.dataset.appOpen){
+    const id = el.dataset.appOpen;
+    if(state.appOpen === id){ state.appOpen = null; state.appFull = null; return render(); }
+    state.appOpen = id; state.appFull = null; render();
+    api(`/api/admin/applications/${id}`)
+      .then(full => { state.appFull = full; render(); })
+      .catch(err => { toast(err.message); state.appOpen = null; render(); });
+    return;
+  }
+  if(el && (el.dataset.appAccept || el.dataset.appHold || el.dataset.appDecline)){
+    const id = el.dataset.appAccept || el.dataset.appHold || el.dataset.appDecline;
+    const noteEl = document.getElementById("app-note");
+    const note = noteEl ? noteEl.value.trim() : "";
+    const who = state.appFull ? state.appFull.name : "this applicant";
+
+    if(el.dataset.appAccept){
+      if(!confirm(`Accept ${who}? Their account is created straight away and they're emailed to sign in.`)) return;
+      el.disabled = true; el.textContent = "Accepting…";
+      api(`/api/admin/applications/${id}/accept`, {method:"POST", body:{}})
+        .then(r => {
+          toast(r.reactivated ? `${who} reinstated.` : `${who} is now a tutor.`);
+          state.appOpen = null; state.appFull = null; state.adminData = null; render();
+        })
+        .catch(err => { toast(err.message); render(); });
+      return;
+    }
+    if(el.dataset.appHold){
+      const held = state.adminData.applications.find(a => a.id === id);
+      const action = held && held.status === "held" ? "reopen" : "hold";
+      api(`/api/admin/applications/${id}/${action}`, {method:"POST", body:{note}})
+        .then(() => {
+          toast(action === "hold" ? "Held for later." : "Moved back to new applications.");
+          state.appOpen = null; state.appFull = null; state.adminData = null; render();
+        })
+        .catch(err => toast(err.message));
+      return;
+    }
+    if(!confirm(`Decline ${who}? They get a short, polite email. This can't be undone.`)) return;
+    el.disabled = true; el.textContent = "Declining…";
+    api(`/api/admin/applications/${id}/decline`, {method:"POST", body:{reason:note}})
       .then(() => {
-        toast("Password changed. Sign in again.");
-        state.isAdmin = false; state.adminData = null; state.token = null;
-        store.clear("argand_token"); store.clear("argand_role");
-        go("#/staff");
+        toast("Declined, and they've been emailed.");
+        state.appOpen = null; state.appFull = null; state.adminData = null; render();
+      })
+      .catch(err => { toast(err.message); render(); });
+    return;
+  }
+  if(el && el.dataset.adminDelete){
+    const id = el.dataset.adminDelete;
+    const t = state.adminData.tutors.find(x => x.id === id);
+    if(!confirm(`Permanently delete ${t ? t.name : "this tutor"}? Their account, bank details and application are erased. Past bookings stay, with their name kept for your records. This cannot be undone.`)) return;
+    api(`/api/admin/tutors/${id}`, {method:"DELETE", body:{}})
+      .then(r => {
+        toast(r.upcoming ? `Deleted. ${r.upcoming} upcoming session${r.upcoming===1?"":"s"} still exist — contact those students.` : "Account deleted.");
+        state.adminData = null; state.adminOpen = null; render();
+      })
+      .catch(err => {
+        if(/still owe/i.test(err.message) && confirm(err.message + "\n\nDelete anyway?")){
+          api(`/api/admin/tutors/${id}`, {method:"DELETE", body:{force:true}})
+            .then(() => { toast("Account deleted."); state.adminData = null; render(); })
+            .catch(e2 => toast(e2.message));
+        } else toast(err.message);
+      });
+    return;
+  }
+  if(el && el.dataset.subjToggle !== undefined){
+    if(state.adminSubjects){ state.adminSubjects = null; return render(); }
+    api("/api/admin/subjects").then(list => { state.adminSubjects = list; render(); }).catch(err => toast(err.message));
+    return;
+  }
+  if(el && el.dataset.ssave){
+    const id = el.dataset.ssave;
+    const price = +document.querySelector(`[data-sprice="${id}"]`).value;
+    api(`/api/admin/subjects/${id}`, {method:"PATCH", body:{price}})
+      .then(() => {
+        toast("Price updated."); state.adminData = null;
+        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); });
       })
       .catch(err => toast(err.message));
     return;
   }
-  if(el && el.dataset.copy !== undefined){
-    const val = el.dataset.copy;
-    const done = () => { const old = el.textContent; el.textContent = "Copied"; setTimeout(() => el.textContent = old, 1400); };
-    if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(val).then(done).catch(() => toast(val));
-    } else {
-      const ta = document.createElement("textarea");
-      ta.value = val; document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); done(); } catch { toast(val); }
-      ta.remove();
-    }
+  if(el && el.dataset.sdel){
+    const id = el.dataset.sdel;
+    const sj = state.adminSubjects.find(x => String(x.id) === id);
+    if(!confirm(`Remove ${sj ? sj.name : "this subject"} from the site?`)) return;
+    api(`/api/admin/subjects/${id}`, {method:"DELETE"})
+      .then(r => {
+        toast(r.message || "Subject removed."); state.adminData = null;
+        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); });
+        api("/api/config").then(c => { SUBJECTS.length = 0; SUBJECTS.push(...c.subjects); });
+      })
+      .catch(err => toast(err.message));
     return;
   }
+  if(e.target.id === "ns-add"){
+    const name = document.getElementById("ns-name").value.trim();
+    if(name.length < 3) return toast("Give the subject a name.");
+    api("/api/admin/subjects", {method:"POST", body:{
+      name, level: document.getElementById("ns-level").value,
+      area: document.getElementById("ns-area").value.trim() || "Other",
+      price: +document.getElementById("ns-price").value || 32,
+      qualifiers: [document.getElementById("ns-qual").value.trim() || name.replace(/^(GCSE|A-Level)\s+/i, "")]
+    }})
+      .then(sj => {
+        toast(`${sj.name} added.`); state.adminData = null;
+        api("/api/admin/subjects").then(l => { state.adminSubjects = l; render(); });
+        api("/api/config").then(c => { SUBJECTS.length = 0; SUBJECTS.push(...c.subjects); });
+      })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(e.target.id === "admin-commission-save"){
+    const v = +document.getElementById("admin-commission").value;
+    if(!(v >= 0 && v <= 90)) return toast("Pick a number between 0 and 90.");
+    api("/api/admin/settings", {method:"POST", body:{commission:v}})
+      .then(() => { toast(`Commission set to ${v}%.`); state.adminData = null; render(); })
+      .catch(err => toast(err.message));
+    return;
+  }
+  if(e.target.id === "csv-link"){
+    e.preventDefault();
+    fetch(API + "/api/admin/export.csv", { headers: { Authorization: "Bearer " + state.token } })
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error("Export failed")))
+      .then(blob => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `argand-bookings-${iso(new Date())}.csv`;
+        a.click(); URL.revokeObjectURL(a.href);
+        toast("Downloaded.");
+      })
+      .catch(err => toast(err.message));
+    return;
+  }
+
   if(e.target.id === "resend"){
     e.target.disabled = true;
     requestHold().then(() => { toast("New code sent."); drawModal(); }).catch(err => toast(err.message));

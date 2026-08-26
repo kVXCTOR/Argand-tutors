@@ -204,15 +204,10 @@ function ownerEmailBody(app) {
       <tr><td style="padding:4px 12px 4px 0;color:#555">Phone</td><td>${app.phone ? esc(app.phone) : "not given"}</td></tr>
     </table>
     <p style="font-family:system-ui;font-size:14px;white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:6px">${esc(app.bio)}</p>
-    <p>If you're happy to take them on, give them this confirmation code:</p>
-    ${codeBlock(app.code)}
-    <p style="font-family:system-ui;font-size:13px;color:#555">
-      They enter it on the site to activate their account. It expires in 14 days.
-      To reject the application, do nothing — no account is created without the code.
-    </p>
-    <p style="font-family:system-ui;font-size:13px">
-      Or approve in one click:
-      <a href="${PUBLIC_URL}/api/applications/${app.id}/approve?token=${app.approveToken}">${PUBLIC_URL}/api/applications/${app.id}/approve</a>
+    <p>Read the whole application and decide in your admin console.</p>
+    ${emailButton(PUBLIC_URL + "/#/admin", "Review this application")}
+    <p style="font-size:13px;color:#666">
+      Nothing happens until you accept them. Declining sends them a short, polite note.
     </p>`;
 }
 
@@ -273,7 +268,7 @@ async function createApplication(req, res, ip) {
     return json(res, 409, { error: "There's already an account with that email. Sign in instead." });
 
   // a repeat application replaces the earlier pending one rather than stacking up
-  db.applications = db.applications.filter(a => !(a.email === email && a.status === "pending"));
+  db.applications = db.applications.filter(a => !(a.email === email && (a.status === "pending" || a.status === "held")));
 
   const app = {
     id: crypto.randomUUID(),
@@ -285,7 +280,8 @@ async function createApplication(req, res, ip) {
     year: String(b.year || "").trim(),
     grades: b.grades.filter(g => g.subject),
     subjectIds: b.subjectIds,
-    subjectNames: b.subjectNames || [],
+    // derived here, never taken from the client, so the admin always sees the truth
+    subjectNames: (b.subjectIds || []).map(id => (subjectById(id) || {}).name).filter(Boolean),
     bio: String(b.bio).trim(),
     phone: clean(b.phone, 32),
     bank: {
@@ -294,12 +290,8 @@ async function createApplication(req, res, ip) {
       accountNumber: encrypt(clean(b.bankAccountNumber, 12).replace(/\D/g, "")),
       last4: clean(b.bankAccountNumber, 12).replace(/\D/g, "").slice(-4)
     },
-    code: sixDigits(),
-    approveToken: crypto.randomBytes(24).toString("hex"),
-    attempts: 0,
     status: "pending",
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 14 * 864e5).toISOString()
+    createdAt: new Date().toISOString()
   };
   db.applications.push(app);
   save(db);
@@ -310,32 +302,24 @@ async function createApplication(req, res, ip) {
     console.error("\n  ####  COULD NOT EMAIL YOU THE APPLICATION  ####");
     console.error("  Reason: " + err.message);
     console.error("  Applicant: " + app.name + " <" + app.email + ">");
-    console.error("  Their approval code is: " + app.code);
-    console.error("  Nothing is lost - send them that code and their account activates.");
+    console.error("  Nothing is lost - the application is waiting in your admin console.");
     console.error("  ###############################################\n");
   }
 
   json(res, 201, { id: app.id, status: "pending" });
 }
 
-async function verifyApplication(req, res, id, ip) {
-  if (!rateLimit(ip, "verify", 20, 15 * 60 * 1000))
-    return json(res, 429, { error: "Too many attempts. Try again shortly." });
+// Applicants no longer activate themselves — the owner accepts them in the console.
+// Kept so any old link in an inbox gets a clear message rather than a 404.
+function retiredVerify(res) {
+  return json(res, 410, {
+    error: "Approval codes are no longer used. The owner reviews your application and you'll be emailed either way."
+  });
+}
 
-  const b = await readBody(req);
-  const app = db.applications.find(a => a.id === id);
-  if (!app) return json(res, 404, { error: "Application not found." });
-  if (app.status === "approved") return json(res, 409, { error: "This account is already active." });
-  if (new Date(app.expiresAt) < new Date()) return json(res, 410, { error: "This code has expired. Please apply again." });
-  if (app.attempts >= 5) return json(res, 429, { error: "Too many wrong codes. Ask the owner to re-send." });
-
-  if (String(b.code) !== app.code) {
-    app.attempts++;
-    save(db);
-    return json(res, 401, { error: "Incorrect code.", attemptsLeft: Math.max(0, 5 - app.attempts) });
-  }
-
+function activateApplication(app) {
   app.status = "approved";
+  app.decidedAt = new Date().toISOString();
   const returning = db.tutors.find(x => x.email === app.email);
   if (returning) {
     Object.assign(returning, {
@@ -350,7 +334,7 @@ async function verifyApplication(req, res, id, ip) {
        <p>Your past sessions and earnings history are still there. Check your availability is
        right before students start booking.</p>
        ${emailButton(PUBLIC_URL + "/#/staff", "Sign in")}`)).catch(e => console.error(e.message));
-    return json(res, 200, { status: "approved", reactivated: true });
+    return { reactivated: true };
   }
   db.tutors.push({
     id: crypto.randomUUID(),
@@ -379,28 +363,16 @@ async function verifyApplication(req, res, id, ip) {
   });
   save(db);
 
-  sendEmail(app.email, "Your Argand tutor account is active",
-    `<p style="font-family:system-ui">Hi ${esc(app.name.split(" ")[0])}, your account is live.
-     Sign in at <a href="${PUBLIC_URL}/#/staff">${PUBLIC_URL}</a> to set your availability and finish your profile.</p>`
-  ).catch(e => console.error("Welcome email failed:", e.message));
+  sendEmail(app.email, "Your " + BRAND + " account is active", wrap(
+    `<h2 style="font-size:19px;margin:0 0 10px;">Welcome to ${esc(BRAND)}</h2>
+     <p>Hi ${esc(app.name.split(" ")[0])}, your application was accepted and your account is live.
+     Sign in with the password you chose when you applied.</p>
+     <p><b>Set your weekly availability first</b> \u2014 you won't appear on the public list until you do,
+     and students can't book you.</p>
+     ${emailButton(PUBLIC_URL + "/#/staff", "Sign in and set your hours")}`))
+    .catch(e => console.error("Welcome email failed:", e.message));
 
-  json(res, 200, { status: "approved" });
-}
-
-function ownerApprove(res, id, token) {
-  const app = db.applications.find(a => a.id === id);
-  const page = (title, body) => {
-    const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-      <div style="font-family:system-ui;max-width:520px;margin:12vh auto;padding:0 20px;line-height:1.5">
-        <h1 style="font-size:22px">${title}</h1>${body}</div>`;
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(html);
-  };
-  if (!app || app.approveToken !== token) return page("Link not valid", "<p>That approval link doesn't match an application.</p>");
-  if (app.status === "approved") return page("Already approved", `<p>${esc(app.name)} already has an active account.</p>`);
-  page("Approved", `<p>Send <b>${esc(app.name)}</b> this confirmation code so they can activate their account:</p>
-    <p style="font-family:ui-monospace,monospace;font-size:36px;letter-spacing:8px;font-weight:700">${app.code}</p>
-    <p style="color:#555;font-size:14px">Their email: ${esc(app.email)}</p>`);
+  return { created: true };
 }
 
 async function login(req, res, ip) {
@@ -1084,10 +1056,7 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/login" && req.method === "POST") return await login(req, res, ip);
 
     let m = p.match(/^\/api\/applications\/([^/]+)\/verify$/);
-    if (m && req.method === "POST") return await verifyApplication(req, res, m[1], ip);
-
-    m = p.match(/^\/api\/applications\/([^/]+)\/approve$/);
-    if (m && req.method === "GET") return ownerApprove(res, m[1], url.searchParams.get("token"));
+    if (m && req.method === "POST") return retiredVerify(res);
 
     m = p.match(/^\/api\/manage\/([^/]+)$/);
     if (m && req.method === "GET") return bookingByToken(res, m[1]);
@@ -1124,9 +1093,13 @@ const server = http.createServer(async (req, res) => {
           totals: { owed: Math.round(totals.owed * 100) / 100, hours: Math.round(totals.hours * 100) / 100,
                     gross: Math.round(totals.gross * 100) / 100 },
           commission: commission(),
-          applications: db.applications.filter(a => a.status === "pending")
+          applications: db.applications
+            .filter(a => a.status === "pending" || a.status === "held")
+            .sort((x, y) => String(x.createdAt).localeCompare(String(y.createdAt)))
             .map(a => ({ id: a.id, name: a.name, email: a.email, university: a.university,
-                         course: a.course, grades: a.grades, createdAt: a.createdAt })),
+                         course: a.course, year: a.year, grades: a.grades, phone: a.phone,
+                         subjectNames: a.subjectNames, status: a.status, note: a.note || "",
+                         createdAt: a.createdAt })),
           bookings: db.bookings.length,
           usingDefaultPassword: !!admin.usingDefaultPassword
         });
@@ -1223,9 +1196,68 @@ const server = http.createServer(async (req, res) => {
       if ((am = p.match(/^\/api\/admin\/applications\/([^/]+)$/)) && req.method === "GET") {
         const a = db.applications.find(x => x.id === am[1]);
         if (!a) return json(res, 404, { error: "No such application." });
-        console.log(`[audit] ${new Date().toISOString()} admin viewed the code for ${a.name}`);
-        return json(res, 200, { code: a.code, email: a.email, name: a.name, bio: a.bio,
-          phone: a.phone, grades: a.grades, subjectNames: a.subjectNames });
+        console.log(`[audit] ${new Date().toISOString()} admin opened the application from ${a.name}`);
+        return json(res, 200, {
+          id: a.id, status: a.status, name: a.name, email: a.email, phone: a.phone,
+          university: a.university, course: a.course, year: a.year,
+          grades: a.grades, subjectIds: a.subjectIds, subjectNames: a.subjectNames, bio: a.bio,
+          bank: a.bank ? { holder: a.bank.holder, last4: a.bank.last4 } : null,
+          note: a.note || "", decisionReason: a.decisionReason || "",
+          createdAt: a.createdAt, decidedAt: a.decidedAt || null,
+          alreadyHasAccount: db.tutors.some(t => t.email === a.email && t.active)
+        });
+      }
+
+      if ((am = p.match(/^\/api\/admin\/applications\/([^/]+)\/(accept|hold|decline|reopen)$/)) && req.method === "POST") {
+        const a = db.applications.find(x => x.id === am[1]);
+        if (!a) return json(res, 404, { error: "No such application." });
+        const action = am[2];
+        const body = await readBody(req).catch(() => ({}));
+        const stamp = new Date().toISOString();
+
+        if (action === "accept") {
+          if (a.status === "approved") return json(res, 409, { error: "Already accepted." });
+          const r = activateApplication(a);
+          save(db);
+          console.log(`[audit] ${stamp} admin accepted ${a.name}`);
+          return json(res, 200, { status: "approved", reactivated: !!r.reactivated });
+        }
+
+        if (action === "hold") {
+          if (a.status === "approved") return json(res, 409, { error: "That application is already accepted." });
+          a.status = "held";
+          a.note = clean(body.note, 300);
+          save(db);
+          console.log(`[audit] ${stamp} admin put ${a.name} on hold`);
+          return json(res, 200, { status: "held" });
+        }
+
+        if (action === "reopen") {
+          if (a.status === "approved") return json(res, 409, { error: "That application is already accepted." });
+          a.status = "pending";
+          save(db);
+          return json(res, 200, { status: "pending" });
+        }
+
+        // decline
+        if (a.status === "approved") return json(res, 409, { error: "That account is already live. Delete the tutor instead." });
+        a.status = "rejected";
+        a.decisionReason = clean(body.reason, 300);   // for your records only
+        a.decidedAt = stamp;
+        save(db);
+        console.log(`[audit] ${stamp} admin declined ${a.name}`);
+        if (body.notify !== false) {
+          sendEmail(a.email, "Your " + BRAND + " application", wrap(
+            `<p>Hi ${esc(a.name.split(" ")[0])},</p>
+             <p>Thanks for applying to tutor with ${esc(BRAND)}. We're not able to take you on at
+             the moment, so we won't be taking your application further.</p>
+             <p>We're a small team and take on very few tutors, so this often isn't a reflection of
+             your ability. You're welcome to apply again in future.</p>
+             <p style="font-size:13px;color:#666;">The details you sent us, including your bank
+             details, will be deleted from our records.</p>`))
+            .catch(e => console.error(e.message));
+        }
+        return json(res, 200, { status: "rejected" });
       }
 
       if ((am = p.match(/^\/api\/admin\/applications\/([^/]+)\/reject$/)) && req.method === "POST") {
@@ -1402,7 +1434,7 @@ initPg().catch(err => {
 
 server.listen(PORT, () => {
   console.log(`\nArgand Tutors running at ${PUBLIC_URL}`);
-  console.log(`Owner email:  ${OWNER_EMAIL}   (applications and approval codes go here)`);
+  console.log(`Owner email:  ${OWNER_EMAIL}   (new applications are emailed here)`);
   if (BREVO_API_KEY) console.log(`Sending from: ${process.env.BREVO_SENDER || OWNER_EMAIL}   (must be verified in Brevo)`);
   else if (RESEND_API_KEY) console.log(`Sending from: ${FROM_EMAIL}`);
   console.log(`Sending mail: ${BREVO_API_KEY ? "yes, via Brevo" : RESEND_API_KEY ? "yes, via Resend" : "no — codes will be printed to this console"}`);
