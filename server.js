@@ -87,28 +87,86 @@ function load() {
    in this file is unchanged — the data shape is identical. */
 const DATABASE_URL = process.env.DATABASE_URL || null;
 let pg = null;
+// Neon suspends an idle database after a few minutes, which kills a single
+// long-lived connection. A pool reconnects on demand, so writes keep working
+// after the database has been asleep. Every write is retried once, and a
+// failure is loud rather than silent — losing bookings quietly is the worst
+// possible failure for this site.
+let pgWriteFailures = 0;
+let lastWriteAt = null;
+let lastWriteError = null;
+
 async function initPg(ClientOverride) {
   if (!DATABASE_URL) return false;
-  const { Client } = ClientOverride ? { Client: ClientOverride } : require("pg");
-  // Strip sslmode from the URL and set SSL explicitly. Otherwise pg logs a
-  // deprecation warning about sslmode aliases on every boot.
+  const lib = ClientOverride ? { Pool: ClientOverride } : require("pg");
+  const Pool = lib.Pool || lib.Client;
+  // sslmode in the URL triggers a deprecation warning, so set SSL explicitly
   const url = DATABASE_URL.replace(/[?&]sslmode=[^&]*/g, "").replace(/\?$/, "");
-  pg = new Client({ connectionString: url, ssl: { require: true, rejectUnauthorized: false } });
-  await pg.connect();
-  await pg.query("CREATE TABLE IF NOT EXISTS store (id int PRIMARY KEY, doc jsonb NOT NULL)");
-  const r = await pg.query("SELECT doc FROM store WHERE id = 1");
+  pg = new Pool({
+    connectionString: url,
+    ssl: { require: true, rejectUnauthorized: false },
+    max: 3,
+    idleTimeoutMillis: 30000,        // let idle connections go before Neon drops them
+    connectionTimeoutMillis: 15000   // Neon takes a moment to wake
+  });
+  // a dropped idle connection raises an error on the pool; without this the
+  // process would exit
+  if (pg.on) pg.on("error", err => console.error("Database connection dropped (it will reconnect):", err.message));
+
+  await pgQuery("CREATE TABLE IF NOT EXISTS store (id int PRIMARY KEY, doc jsonb NOT NULL)");
+  const r = await pgQuery("SELECT doc FROM store WHERE id = 1");
   if (r.rows.length) { db = hydrate({ ...EMPTY, ...r.rows[0].doc }); await writePg(); }
-  else await pg.query("INSERT INTO store (id, doc) VALUES (1, $1)", [JSON.stringify(db)]);
+  else await pgQuery("INSERT INTO store (id, doc) VALUES (1, $1)", [JSON.stringify(db)]);
   return true;
 }
+
+// One retry, because the first query after the database wakes often fails.
+async function pgQuery(sql, params, attempt = 0) {
+  try {
+    return await pg.query(sql, params);
+  } catch (err) {
+    if (attempt === 0) {
+      await new Promise(r => setTimeout(r, 1200));
+      return pgQuery(sql, params, 1);
+    }
+    throw err;
+  }
+}
+
 async function writePg() {
   if (!pg) return;
-  await pg.query("INSERT INTO store (id, doc) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET doc = $1",
+  await pgQuery("INSERT INTO store (id, doc) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET doc = $1",
     [JSON.stringify(db)]);
+  lastWriteAt = new Date().toISOString();
+  lastWriteError = null;
+  if (pgWriteFailures) {
+    console.log(`Database writes are working again after ${pgWriteFailures} failure(s).`);
+    pgWriteFailures = 0;
+  }
+}
+
+// A write that fails is kept on disk as well, so nothing is lost even if the
+// database is unreachable for a while.
+function emergencyBackup() {
+  try {
+    fs.writeFileSync(DB_PATH + ".backup", JSON.stringify(db, null, 2));
+  } catch {}
 }
 
 function save(db) {
-  if (pg) { writePg().catch(e => console.error("Could not write to the database:", e.message)); return; }
+  if (pg) {
+    writePg().catch(e => {
+      pgWriteFailures++;
+      lastWriteError = e.message;
+      console.error("\n  ####  COULD NOT SAVE TO THE DATABASE  ####");
+      console.error("  " + e.message);
+      console.error("  Failure number " + pgWriteFailures + ". A copy has been written to");
+      console.error("  " + DB_PATH + ".backup so nothing is lost.");
+      console.error("  ##########################################\n");
+      emergencyBackup();
+    });
+    return;
+  }
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 let db = JSON.parse(JSON.stringify(EMPTY));   // filled in by hydrate() once the defaults below exist
@@ -1071,7 +1129,14 @@ const server = http.createServer(async (req, res) => {
   res.setHeader("Referrer-Policy", "same-origin");
 
   try {
-    if (p === "/api/health") return json(res, 200, { ok: true, tutors: db.tutors.filter(t => t.active).length, bookings: db.bookings.length, pending: db.applications.filter(a => a.status === "pending").length });
+    if (p === "/api/health") return json(res, 200, {
+      ok: pgWriteFailures === 0,
+      storage: pg ? "postgres" : "file",
+      lastWriteAt, lastWriteError, writeFailures: pgWriteFailures,
+      tutors: db.tutors.filter(t => t.active).length,
+      bookings: db.bookings.length,
+      pending: db.applications.filter(a => a.status === "pending").length
+    });
     if (p === "/api/applications" && req.method === "POST") return await createApplication(req, res, ip);
     if (p === "/api/tutors" && req.method === "GET")
       return json(res, 200, db.tutors.filter(t => t.active).map(publicTutor));
@@ -1550,6 +1615,18 @@ async function runReminders() {
   }
 }
 setInterval(sendReminders, 5 * 60 * 1000).unref();
+
+// Every few minutes, prove the database is still writable. Without this a
+// broken connection stays invisible until someone tries to book.
+if (DATABASE_URL) setInterval(() => {
+  if (!pg) return;
+  writePg().catch(e => {
+    pgWriteFailures++;
+    lastWriteError = e.message;
+    console.error("Database check failed:", e.message);
+    emergencyBackup();
+  });
+}, 4 * 60 * 1000).unref();
 setTimeout(sendReminders, Number(process.env.REMINDER_START_MS) || 10000).unref();
 
 setInterval(() => {

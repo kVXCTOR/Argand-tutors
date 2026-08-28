@@ -1,7 +1,5 @@
-# Never commit these.
-# data.json holds tutor bank details, customer emails and bookings.
-# .enc-key decrypts the bank details. Together they are everything sensitive.
 data.json
+data.json.backup
 .enc-key
 node_modules/
 .env
