@@ -72,6 +72,9 @@ function hydrate(d) {
       ...x, active: true, qualifiers: SUBJECT_QUALIFIERS[x.id] || [x.name.toLowerCase()]
     }));
   if (typeof d.settings.commission !== "number") d.settings.commission = DEFAULT_COMMISSION;
+  // Further Maths used to sit under Maths; move it across on existing databases
+  for (const sj of d.settings.subjects)
+    if (/further/i.test(sj.name) && sj.area === "Maths") sj.area = "Further Maths";
   return d;
 }
 function load() {
@@ -408,7 +411,7 @@ async function login(req, res, ip) {
 const DEFAULT_SUBJECTS = [
   { id:1, name:"GCSE Maths", area:"Maths", level:"GCSE", price:30, icon:"\u2211",
     desc:"Foundation and Higher tier. Algebra, geometry, ratio and probability, with past-paper technique every session." },
-  { id:2, name:"GCSE Further Maths", area:"Maths", level:"GCSE", price:32, icon:"\u03c0",
+  { id:2, name:"GCSE Further Maths", area:"Further Maths", level:"GCSE", price:32, icon:"\u03c0",
     desc:"AQA Level 2 Certificate. Matrices, calculus foundations and advanced algebra for pupils heading to A-Level." },
   { id:3, name:"GCSE Physics", area:"Physics", level:"GCSE", price:30, icon:"\u269b",
     desc:"Separate and combined award. Forces, electricity, waves and the required practicals." },
@@ -416,7 +419,7 @@ const DEFAULT_SUBJECTS = [
     desc:"Algorithms, data representation and Python, plus the written paper technique that trips people up." },
   { id:5, name:"A-Level Mathematics", area:"Maths", level:"A-Level", price:36, icon:"\u222b",
     desc:"Pure, statistics and mechanics across Edexcel, AQA and OCR. Built around your last mock paper." },
-  { id:6, name:"A-Level Further Maths", area:"Maths", level:"A-Level", price:40, icon:"\u2202",
+  { id:6, name:"A-Level Further Maths", area:"Further Maths", level:"A-Level", price:40, icon:"\u2202",
     desc:"Complex numbers, matrices, differential equations and the optional applied modules." },
   { id:7, name:"A-Level Physics", area:"Physics", level:"A-Level", price:36, icon:"\u03a9",
     desc:"Mechanics, fields, thermal and particle physics, with heavy drilling on six-mark explanation questions." },
@@ -584,12 +587,35 @@ function hourlyFor(t, subjectId) {
 const priceFor = (t, subjectId, mins) =>
   Math.round(hourlyFor(t, subjectId) * LENGTHS.find(l => l.mins === Number(mins)).mult * 100) / 100;
 
+// Ratings come from finished sessions only, and only where the student left one.
+function reviewsFor(tutorId) {
+  const out = [];
+  for (const b of db.bookings) {
+    if (b.tutorId !== tutorId || !b.review) continue;
+    out.push({
+      stars: b.review.stars,
+      text: b.review.text || "",
+      who: (b.name || "").split(" ")[0] + " " + ((b.name || "").split(" ")[1] || "").slice(0, 1) + ".",
+      subject: (subjectById(b.subjectId) || {}).name,
+      at: b.review.at
+    });
+  }
+  return out.sort((x, y) => String(y.at).localeCompare(String(x.at)));
+}
+function ratingFor(tutorId) {
+  const rs = reviewsFor(tutorId);
+  if (!rs.length) return { rating: null, count: 0 };
+  const avg = rs.reduce((a, r) => a + r.stars, 0) / rs.length;
+  return { rating: Math.round(avg * 10) / 10, count: rs.length };
+}
+
 const publicTutor = t => ({
   id: t.id, name: t.name, headline: t.headline, bio: t.bio,
   university: t.university, course: t.course, year: t.year, sat: t.sat,
   grades: t.grades, subjectIds: t.subjectIds, premium: t.premium, rates: t.rates || {}, photo: t.photo,
   availability: t.availability || {}, blocked: t.blocked || [], buffer: t.buffer ?? 15,
-  hours: t.hours || 0, busy: busyHours(t.id)
+  hours: t.hours || 0, busy: busyHours(t.id),
+  ...ratingFor(t.id), said: reviewsFor(t.id).slice(0, 6)
 });
 
 async function updateMe(req, res, t) {
@@ -933,6 +959,29 @@ async function cancelBooking(req, res, token) {
   json(res, 200, { status: "cancelled", refund: b.refundDue });
 }
 
+async function leaveReview(req, res, token) {
+  const b = db.bookings.find(x => x.manageToken === token);
+  if (!b) return json(res, 404, { error: "That link isn't valid." });
+  if (b.status !== "confirmed") return json(res, 409, { error: "That session was cancelled." });
+  const end = new Date(`${b.day}T${String(b.hour).padStart(2, "0")}:00:00Z`).getTime() + b.mins * 6e4;
+  if (end > Date.now()) return json(res, 409, { error: "You can leave a review once the session has finished." });
+
+  const body = await readBody(req);
+  const stars = Math.round(Number(body.stars));
+  if (!(stars >= 1 && stars <= 5)) return json(res, 400, { error: "Pick between one and five stars." });
+  b.review = { stars, text: clean(body.text, 400), at: new Date().toISOString() };
+  save(db);
+
+  const t = db.tutors.find(x => x.id === b.tutorId);
+  if (t) sendEmail(t.email, `New review from ${b.name.split(" ")[0]}`, wrap(
+    `<p><b>${"\u2605".repeat(stars)}${"\u2606".repeat(5 - stars)}</b></p>
+     ${b.review.text ? `<p style="background:#f4f2ee;padding:12px;border-radius:6px;">${esc(b.review.text)}</p>` : ""}
+     <p style="font-size:13px;color:#666;">This is now on your public profile.</p>`)
+  ).catch(e => console.error(e.message));
+
+  json(res, 200, { ok: true, ...ratingFor(b.tutorId) });
+}
+
 async function joinWaitlist(req, res, ip) {
   if (!rateLimit(ip, "wait", 20, 36e5)) return json(res, 429, { error: "Too many requests." });
   const b = await readBody(req);
@@ -1031,6 +1080,8 @@ const server = http.createServer(async (req, res) => {
         paymentsEnabled: PAYMENTS_ENABLED, verifyEmail: VERIFY_EMAIL, contactEmail: CONTACT_EMAIL });
     if (p === "/api/holds" && req.method === "POST") return await createHold(req, res, ip);
     if (p === "/api/holds/confirm" && req.method === "POST") return await confirmHold(req, res);
+    if ((mm2 = p.match(/^\/api\/manage\/([^/]+)\/review$/)) && req.method === "POST")
+      return await leaveReview(req, res, mm2[1]);
     if ((mm2 = p.match(/^\/api\/holds\/([^/]+)\/checkout$/)) && req.method === "POST")
       return await createCheckout(req, res, mm2[1]);
     if ((mm2 = p.match(/^\/api\/holds\/([^/]+)\/complete\/([^/]+)$/)) && req.method === "POST")
@@ -1482,6 +1533,14 @@ async function runReminders() {
          <a href="${PUBLIC_URL}/#/manage/${b.manageToken}">manage your booking</a>.</p>`)).catch(() => {});
       sendEmail(t.email, `Tomorrow: ${sj.name} with ${b.name}`, wrap(
         `<p>${esc(b.name)}, ${when}, ${b.mins} minutes.</p>`)).catch(() => {});
+    }
+    if (!b.reviewAsked && !b.review && hrs < -2 && hrs > -72) {
+      b.reviewAsked = true; save(db);
+      sendEmail(b.email, `How was your session with ${t.name.split(" ")[0]}?`, wrap(
+        `<p>Hope ${when} went well.</p>
+         <p>A quick rating helps other students pick the right tutor, and helps
+         ${esc(t.name.split(" ")[0])} more than you'd think. It takes about ten seconds.</p>
+         ${emailButton(PUBLIC_URL + "/#/manage/" + b.manageToken, "Leave a review")}`)).catch(() => {});
     }
     if (!b.remind1 && hrs <= 1 && hrs > -0.5) {
       b.remind1 = true; save(db);

@@ -479,7 +479,7 @@ button.row:hover::before{opacity:1;}
 const BRAND = "Argand Tutors";
 const DOMAIN = "argandtutors.co.uk";
 const UK_TZ = "Europe/London";
-const AREA_COLOUR = {Maths:"#2743c4", Physics:"#0f766e", Computing:"#a35a00"};
+const AREA_COLOUR = {Maths:"#2743c4", "Further Maths":"#6b3fa0", Physics:"#0f766e", Computing:"#a35a00"};
 
 const SUBJECTS = [
   {id:1, name:"GCSE Maths", area:"Maths", level:"GCSE", price:30, icon:"∑",
@@ -564,7 +564,9 @@ async function loadTutors() {
 const state = {
   route:{name:"browse"}, level:"All", area:"All", query:"", tutorFilter:"All",
   dayIndex:0, slotHour:null, lengthMins:60,
-  step:null, name:"", email:"", phone:"", promo:"", promoInput:"", promoPercent:0,
+  step:null, name:store.get("argand_name") || "", email:store.get("argand_email") || "",
+  phone:store.get("argand_phone") || "", promo:"", promoInput:"", promoPercent:0,
+  timeFilter:"any",
   rescheduleRef:null, signedIn:null, isAdmin:false, adminData:null, adminOpen:null,
   adminBookings:null, adminSubjects:null, appOpen:null, appFull:null, showPw:false, token:null,
   repeat:1, waitHour:null, noteRef:null,
@@ -664,12 +666,37 @@ function firstFreeDay(tutorId, mins){
   return i < 0 ? 0 : i;
 }
 function nextAvailable(tutorId){
-  for(const d of DAYS){
-    const s = slotsFor(tutorId, d, 60).find(x => x.free);
-    if(s) return `${fmtDate(d)}, ${fmtHour(s.hour)}`;
-  }
-  return "nothing in the next fortnight";
+  const n = nextSlots(tutorId, 1)[0];
+  return n ? `${fmtDate(n.date)}, ${fmtHour(n.hour)}` : "nothing in the next fortnight";
 }
+// the soonest few openings, for one-click booking straight from a list
+function nextSlots(tutorId, count){
+  const out = [];
+  for(let i = 0; i < DAYS.length && out.length < count; i++){
+    for(const sl of slotsFor(tutorId, DAYS[i], state.lengthMins)){
+      if(!sl.free) continue;
+      out.push({date:DAYS[i], dayIndex:i, hour:sl.hour});
+      if(out.length >= count) break;
+    }
+  }
+  return out;
+}
+const TIME_BANDS = {
+  any:      {label:"Any time",   test:() => true},
+  morning:  {label:"Mornings",   test:h => h < 12},
+  afternoon:{label:"Afternoons", test:h => h >= 12 && h < 17},
+  evening:  {label:"Evenings",   test:h => h >= 17}
+};
+const inBand = h => TIME_BANDS[state.timeFilter].test(h);
+
+function timeFilterRow(){
+  return `<div class="filters" style="padding-top:0;">
+    <span class="filter-label">When</span>
+    ${Object.entries(TIME_BANDS).map(([k, b]) =>
+      `<button class="chip ${state.timeFilter===k?"is-on":""}" data-tband="${k}">${b.label}</button>`).join("")}
+  </div>`;
+}
+
 function slotBtn(sl){
   return sl.free
     ? `<button class="slot ${sl.hour===state.slotHour?"is-on":""}" data-slot="${sl.hour}">${fmtHour(sl.hour)}</button>`
@@ -768,8 +795,7 @@ function route(){
   if(["dash","availability","edit"].includes(r.name) && !state.signedIn){ toast("Sign in to reach that page."); return go("#/staff"); }
   if(r.name === "login" && state.signedIn) return go("#/staff/dashboard");
   if(r.name === "book" || r.name === "profile"){
-    if(state.route.tutorId !== r.tutorId){
-      state.slotHour = null;
+    if(state.route.tutorId !== r.tutorId && state.slotHour === null){
       state.dayIndex = firstFreeDay(r.tutorId, state.lengthMins);
     } else if(state.route.name === r.name && state.route.subjectId){
       r.subjectId = state.route.subjectId;
@@ -852,7 +878,7 @@ function viewBrowse(){
     (state.level === "All" || s.level === state.level) &&
     (state.area === "All" || s.area === state.area) &&
     (!q || s.name.toLowerCase().includes(q) || s.area.toLowerCase().includes(q)));
-  const areas = ["All", ...Object.keys(AREA_COLOUR)];
+  const areas = ["All", ...new Set(SUBJECTS.map(x => x.area))];
   const openNow = TUTORS.filter(t => slotsFor(t.id, DAYS[0], 60).some(s => s.free)).length;
 
   main.innerHTML = `
@@ -935,11 +961,19 @@ function tutorRow(t){
       <div class="uni" style="margin-top:2px;">${CAP}<span>${t.course}, ${t.uni} · ${t.year}</span></div>
       <div style="margin-top:8px;">${gradesHtml(t)}</div>
       <div class="row-note">
-        <span class="badge badge-green">★ ${t.rating}</span>
+        ${t.rating ? `<span class="badge badge-green">★ ${t.rating}</span>` : `<span class="badge badge-grey">New</span>`}
         ${t.reviews ? `<span>${t.reviews} reviews</span><span class="dot"></span>` : ""}
         ${t.hours ? `${t.hours ? `<span>${t.hours} hours tutored</span>` : ""}<span class="dot"></span>` : ""}
         <span class="weekstrip" title="Availability over the next week">${weekStrip(t.id)}</span>
       </div>
+      ${(() => {
+        const soon = nextSlots(t.id, 3);
+        return soon.length ? `<div class="row-note" style="margin-top:8px;">
+          <span style="color:var(--ink-2);">Soonest:</span>
+          ${soon.map(x => `<span class="chip" style="padding:3px 10px;border-color:var(--blue);color:var(--blue);"
+            data-quick="${t.id}|${t.subjects[0]}|${x.dayIndex}|${x.hour}">${fmtDate(x.date).replace(/^\w+ /,"")} ${fmtHour(x.hour)}</span>`).join("")}
+        </div>` : "";
+      })()}
     </div>
     <div class="row-side">
       <div class="price"><small>from </small>${money(fromPrice(t))}<small>/hr</small></div>
@@ -949,7 +983,7 @@ function tutorRow(t){
 }
 
 function viewTutors(){
-  const areas = ["All", ...Object.keys(AREA_COLOUR)];
+  const areas = ["All", ...new Set(SUBJECTS.map(x => x.area))];
   const list = TUTORS.filter(t => state.tutorFilter === "All" ||
     t.subjects.some(id => subject(id).area === state.tutorFilter));
   main.innerHTML = `
@@ -1006,7 +1040,7 @@ function viewProfile(){
           <div class="uni" style="margin-top:4px;">${CAP}<span>${t.course}, ${t.uni}</span></div>
           <div class="detail-sub" style="font-size:13px;">${t.year} · sat A-Levels in ${t.sat}</div>
           <div class="row-note" style="margin-top:8px;">
-            ${t.rating ? `<span class="badge badge-green">★ ${t.rating}</span><span>${t.reviews} reviews</span><span class="dot"></span>` : ""}
+            ${t.rating ? `${t.rating ? `<span class="badge badge-green">★ ${t.rating}</span>` : `<span class="badge badge-grey">New</span>`}<span>${t.reviews} reviews</span><span class="dot"></span>` : ""}
             ${t.hours ? `<span>${t.hours} hours tutored</span>` : ""}
             ${t.buffer ? `<span class="dot"></span><span>${t.buffer} min gap between sessions</span>` : ""}
           </div>
@@ -1033,6 +1067,7 @@ function viewProfile(){
         ${LENGTHS.map(l => `<button class="chip ${l.mins===state.lengthMins?"is-on":""}" data-length="${l.mins}">
           ${l.label} · ${money(priceFor(t.id, s.id, l.mins))}</button>`).join("")}
       </div>
+      ${timeFilterRow()}
       <div class="days">
         ${DAYS.slice(0,10).map((d,i) => {
           const has = slotsFor(t.id, d, state.lengthMins).some(x => x.free);
@@ -1041,7 +1076,7 @@ function viewProfile(){
         }).join("")}
       </div>
       ${slots.length ? `<div class="slots">
-        ${slots.map(slotBtn).join("")}
+        ${slots.filter(sl => inBand(sl.hour)).length ? slots.filter(sl => inBand(sl.hour)).map(slotBtn).join("") : `<div class="empty" style="grid-column:1/-1;padding:16px;"><b>Nothing in that part of the day</b>Try another time of day or a different date.</div>`}
       </div>` : `<div class="empty"><b>Not available on ${fmtDate(date)}</b>${t.name.split(" ")[0]} has no hours set for this day.</div>`}
       <div class="summary">
         <div class="summary-text">
@@ -1056,14 +1091,14 @@ function viewProfile(){
     </div>
 
     ${!t.said.length ? "" : `<div class="card">
-      <div class="card-head">Reviews<span class="sub">${t.reviews} total</span></div>
+      <div class="card-head">Reviews<span class="sub">${t.reviews} from students</span></div>
       ${t.said.map(r => `
         <div class="review">
-          <div class="avatar avatar-sm" style="background:#5f6b7a;">${r.who[0]}</div>
+          <div class="avatar avatar-sm" style="background:#5f6b7a;">${esc((r.who || "?")[0])}</div>
           <div class="row-body">
-            <div class="review-top"><span class="review-name">${r.who}</span>
-              <span class="stars">${stars(r.stars)}</span><span class="review-meta">${r.ctx}</span></div>
-            <p>${r.text}</p>
+            <div class="review-top"><span class="review-name">${esc(r.who || "A student")}</span>
+              <span class="stars">${stars(r.stars)}</span><span class="review-meta">${esc(r.subject || "")}</span></div>
+            ${r.text ? `<p>${esc(r.text)}</p>` : ""}
           </div>
         </div>`).join("")}
     </div>`}`;
@@ -1101,7 +1136,7 @@ function viewSubject(){
             <div class="uni" style="margin-top:2px;">${CAP}<span>${t.course}, ${t.uni}</span></div>
             <div style="margin-top:8px;">${gradesHtml(t)}</div>
             <div class="row-note">
-              <span class="badge badge-green">★ ${t.rating}</span>
+              ${t.rating ? `<span class="badge badge-green">★ ${t.rating}</span>` : `<span class="badge badge-grey">New</span>`}
               <span class="weekstrip">${weekStrip(t.id)}</span>
               <span>next ${nextAvailable(t.id)}</span>
             </div>
@@ -1140,7 +1175,7 @@ function viewBook(){
           <div class="detail-title">${t.name}</div>
           <div class="uni" style="margin-top:4px;">${CAP}<span>${t.course}, ${t.uni}</span></div>
           <div class="row-note" style="margin-top:6px;">
-            <span class="badge badge-green">★ ${t.rating}</span>
+            ${t.rating ? `<span class="badge badge-green">★ ${t.rating}</span>` : `<span class="badge badge-grey">New</span>`}
             ${t.hours ? `${t.hours ? `<span>${t.hours} hours tutored</span>` : ""}<span class="dot"></span>` : ""}
             <button style="background:none;border:none;color:var(--blue);font-weight:600;padding:0;font-size:12px;"
               data-go="#/profile/${t.id}">Full profile</button>
@@ -1155,6 +1190,7 @@ function viewBook(){
         ${LENGTHS.map(l => `<button class="chip ${l.mins===state.lengthMins?"is-on":""}" data-length="${l.mins}">
           ${l.label} · ${money(priceFor(t.id, s.id, l.mins))}</button>`).join("")}
       </div>
+      ${timeFilterRow()}
       <div class="days">
         ${DAYS.slice(0,10).map((d,i) => {
           const has = slotsFor(t.id, d, state.lengthMins).some(x => x.free);
@@ -1163,7 +1199,7 @@ function viewBook(){
         }).join("")}
       </div>
       ${slots.length ? `<div class="slots">
-        ${slots.map(slotBtn).join("")}
+        ${slots.filter(sl => inBand(sl.hour)).length ? slots.filter(sl => inBand(sl.hour)).map(slotBtn).join("") : `<div class="empty" style="grid-column:1/-1;padding:16px;"><b>Nothing in that part of the day</b>Try another time of day or a different date.</div>`}
       </div>` : `<div class="empty"><b>Not available on ${fmtDate(date)}</b>Try another date.</div>`}
       <div class="summary">
         <div class="summary-text">
@@ -1210,6 +1246,16 @@ function viewBookings(){
               ${b.status==="confirmed"?`<span class="dot"></span><span>${free?"Free to cancel":"Inside 24 hours — no refund"}</span>`:""}
             </div>
             ${b.note ? `<div class="notebox"><b>Note from ${tutor(b.tutorId).name.split(" ")[0]}:</b> ${esc(b.note)}</div>` : ""}
+            ${b.status === "confirmed" && hoursUntil(b) < -0.5 ? (b.review
+              ? `<div class="notebox" style="border-color:var(--green);">
+                   <b>You rated this</b> <span class="stars">${stars(b.review.stars)}</span></div>`
+              : `<div class="notebox" id="rev-${b.ref}">
+                   <b>How did it go?</b> A rating helps other students choose.
+                   <div style="margin-top:6px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+                     ${[1,2,3,4,5].map(n => `<button class="chip" data-rate-book="${b.ref}|${n}"
+                       style="padding:2px 9px;">${n}\u2605</button>`).join("")}
+                   </div>
+                 </div>`) : ""}
           </div>
           <div class="row-side">
             ${b.status==="confirmed"?`
@@ -2103,6 +2149,8 @@ function drawModal(){
   if(state.step === "details"){
     mTitle.textContent = "Your details";
     mBody.innerHTML = recapHtml() + `
+      ${state.name && state.email ? `<div class="hint" style="margin:-6px 0 12px;">
+        Welcome back — we've filled these in from last time.</div>` : ""}
       <div class="field" id="f-name"><label for="i-name">Full name</label>
         <input id="i-name" value="${esc(state.name)}" autocomplete="name">
         <div class="err">Enter the name the session should be booked under.</div></div>
@@ -2232,7 +2280,7 @@ function drawModal(){
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save],[data-copy],[data-app-open],[data-app-accept],[data-app-hold],[data-app-decline],[data-subj-toggle],[data-ssave],[data-sdel],[data-admin-delete]");
+  const el = e.target.closest("[data-go],[data-level],[data-area],[data-tfilter],[data-psub],[data-day],[data-slot],[data-length],[data-resched],[data-cancel],[data-ics],[data-signout],[data-avtoggle],[data-block],[data-wait],[data-repeat],[data-apick],[data-note],[data-admin-open],[data-admin-bank],[data-admin-settle],[data-admin-toggle],[data-admin-save],[data-copy],[data-tband],[data-quick],[data-rate-book],[data-app-open],[data-app-accept],[data-app-hold],[data-app-decline],[data-subj-toggle],[data-ssave],[data-sdel],[data-admin-delete]");
   if(el){
     if(el.dataset.signout !== undefined){
       state.signedIn = null; state.isAdmin = false; state.adminData = null; state.token = null;
@@ -2250,6 +2298,25 @@ document.addEventListener("click", e => {
     if(el.dataset.psub){ state.route.subjectId = +el.dataset.psub; return render(); }
     if(el.dataset.day){ state.dayIndex = +el.dataset.day; state.slotHour = null; return render(); }
     if(el.dataset.slot){ state.slotHour = +el.dataset.slot; return render(); }
+    if(el.dataset.rateBook){
+      const [ref, n] = el.dataset.rateBook.split("|");
+      const text = prompt("Anything you'd like to add? (optional)") || "";
+      api(`/api/manage/${encodeURIComponent(manageToken)}/review`, {method:"POST", body:{stars:+n, text}})
+        .then(() => {
+          const b = BOOKINGS.find(x => x.ref === ref);
+          if(b) b.review = {stars:+n, text};
+          toast("Thanks — that's on their profile now.");
+          loadTutors().then(render).catch(() => render());
+        })
+        .catch(err => toast(err.message));
+      return;
+    }
+    if(el.dataset.tband){ state.timeFilter = el.dataset.tband; return render(); }
+    if(el.dataset.quick){
+      const [tid, sid, di, hr] = el.dataset.quick.split("|");
+      state.dayIndex = +di; state.slotHour = +hr; state.timeFilter = "any";
+      return go(`#/profile/${tid}`);
+    }
     if(el.dataset.wait){ state.waitHour = +el.dataset.wait; return openModal("waitlist"); }
     if(el.dataset.repeat){ captureDetails(); state.repeat = +el.dataset.repeat; return drawModal(); }
     if(el.dataset.note){ state.noteRef = el.dataset.note; return openModal("note"); }
@@ -2690,6 +2757,10 @@ document.addEventListener("click", e => {
       state.name = name; state.email = email;
       const ph = document.getElementById("i-phone");
       state.phone = ph ? ph.value.trim() : "";
+      // so a second booking doesn't mean typing it all again
+      store.set("argand_name", state.name);
+      store.set("argand_email", state.email);
+      store.set("argand_phone", state.phone);
       e.target.disabled = true; e.target.textContent = CONFIG.verifyEmail ? "Sending code…" : "Just a moment…";
       requestHold()
         .then(r => {
