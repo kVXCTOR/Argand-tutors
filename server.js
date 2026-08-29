@@ -99,12 +99,30 @@ let storageError = null;        // why the database isn't being used, in plain t
 let localWritesSinceBoot = 0;   // so a late connection doesn't overwrite recent changes
 let connectAttempts = 0;
 
+// Neon hands out URLs like
+//   postgres://user:pass@host/neondb?sslmode=require&channel_binding=require
+// sslmode makes the driver log a deprecation warning and channel_binding isn't
+// supported by it, so both come out — but with a real URL parser, because
+// removing them with a regex leaves a stray "&" that becomes part of the
+// database name.
+function cleanDbUrl(raw) {
+  const trimmed = String(raw).trim().replace(/^["']|["']$/g, "");
+  try {
+    const u = new URL(trimmed);
+    u.searchParams.delete("sslmode");
+    u.searchParams.delete("channel_binding");
+    u.searchParams.delete("options");
+    return u.toString().replace(/\?$/, "");
+  } catch {
+    return trimmed;   // not a parseable URL; hand it over untouched
+  }
+}
+
 async function initPg(ClientOverride) {
   if (!DATABASE_URL) return false;
   const lib = ClientOverride ? { Pool: ClientOverride } : require("pg");
   const Pool = lib.Pool || lib.Client;
-  // sslmode in the URL triggers a deprecation warning, so set SSL explicitly
-  const url = DATABASE_URL.replace(/[?&]sslmode=[^&]*/g, "").replace(/\?$/, "");
+  const url = cleanDbUrl(DATABASE_URL);
   pg = new Pool({
     connectionString: url,
     ssl: { require: true, rejectUnauthorized: false },
@@ -149,6 +167,7 @@ function scheduleReconnect() {
         localWritesSinceBoot = 0;
       })
       .catch(err => {
+        pg = null;                 // don't leave a broken pool looking healthy
         storageError = err.message;
         if (connectAttempts % 10 === 0)
           console.error(`Still can't reach the database after ${connectAttempts} attempts: ${err.message}`);
