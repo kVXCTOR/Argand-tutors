@@ -35,26 +35,26 @@ receives a confirmation code by email, and the account only comes into existence
 that code is entered. After that it's an ordinary email-and-password login that stays
 signed in across refreshes.
 
-**Customers have no accounts and cannot create one.** They give a name and an email,
-confirm the email with a code, and everything arrives by email: the booking details
-plus a private link for viewing or cancelling that session. There is no customer
-password anywhere in the system.
+**Customers have no accounts and cannot create one.** They give a name and an email and book —
+no code, no password, nothing to remember. The booking details and a private link for cancelling
+arrive by email. If you ever start getting junk bookings, set `VERIFY_CUSTOMER_EMAIL=true` and
+they'll have to confirm a code first.
 
 ## Setting yourself up as the first tutor
 
 The site starts with no tutors at all. To create the first account:
 
 1. Go to `/#/apply` and fill in the form as yourself.
-2. Look at the terminal window. Without an email key the confirmation code is
-   printed there instead of emailed — copy the six digits.
-3. Enter that code on the page. Your account is now live.
-4. Sign in at `/#/staff`, open **Availability**, and set your weekly hours.
+2. Sign in at `/#/staff` as the admin (`argandtutors@gmail.com`), open your application
+   and click **Accept**. Your tutor account is created immediately.
+3. Sign out, sign back in with your tutor email and password, open **Availability**,
+   and set your weekly hours.
    **You won't appear on the public site until you do** — a tutor with no hours
    has nothing anyone can book.
 5. Add a photo and finish your profile.
 
-Once email is switched on the code goes to `OWNER_EMAIL` instead, which is what makes
-this an approval system: an applicant never sees their own code.
+Nothing exists until you accept it, which is what makes this an approval system rather
+than an open sign-up.
 
 ## What the system does and doesn't do for you
 
@@ -108,6 +108,57 @@ first run and saved to `.enc-key` next to the server.
 You are storing bank details and children's contact details. That makes a privacy policy, a
 retention rule and an ICO registration genuine obligations rather than nice-to-haves.
 
+## Subjects
+
+The admin console has a **Subjects offered** panel. From there you can change any subject's
+hourly price, add a new one, or remove one. Changes appear on the public site immediately.
+
+Each subject carries a **qualifying subject** — the A-Level a tutor must have an A\* in before they
+can choose to teach it. When adding "A-Level Chemistry" you'd set the qualifier to "chemistry".
+Applicants only see subjects their grades allow; the server checks again on submit, so the form
+can't be bypassed.
+
+The existing rules: maths and further maths qualify separately, though an A\* in further maths
+unlocks both. "Computing", "computer studies" and "computer science" are treated as the same thing.
+
+Removing a subject that already has bookings hides it instead of deleting it, so past bookings
+still make sense.
+
+## Reviewing applications
+
+There are no approval codes. An application arrives, you get an email with a button to the admin
+console, and you decide there.
+
+Click **Read application** for everything they sent: email, phone, university, course, year, every
+A-Level grade, the subjects they want to teach, what they wrote about themselves, and their bank
+account holder name with the last four digits.
+
+- **Accept** — creates the tutor account immediately and emails them to sign in with the password
+  they chose when applying.
+- **Hold** — keeps it in the queue marked *On hold* with a private note. Nothing is sent to them.
+- **Decline** — sends a short, polite email. Your reason is stored for your records and never sent.
+
+Applicants see an "Application sent" screen telling them they'll hear back either way, usually
+within three working days. Declined applicants can apply again later with the same email.
+
+## Deleting a tutor
+
+Deactivating hides a tutor from the site but keeps everything. **Delete permanently** erases the
+account, their bank details and their application. Past bookings survive with the tutor's name
+kept as text, so your records and earnings history stay intact.
+
+If you still owe them money, deletion is refused until you confirm a second time. Their email is
+freed, so they can apply again from scratch later.
+
+## Reviews
+
+After a session finishes, the student is emailed a link to rate it out of five and add a comment.
+Ratings appear on the tutor's public profile, and the tutor is emailed each new one.
+
+Reviews can only be left through the private link in a confirmation email, only for sessions that
+have actually happened, and only once. Reviewers are shown as a first name and an initial, never
+an email address. A tutor with no reviews yet shows a **New** badge rather than a fake rating.
+
 ## Promo codes
 
 Codes live near the top of `server.js`, in the `PROMOS` block:
@@ -141,7 +192,7 @@ All optional — the site runs without any of them. Set them as environment vari
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | `3000` | Port to listen on |
-| `OWNER_EMAIL` | `argandtutors@gmail.com` | **Where tutor applications and approval codes are sent** |
+| `OWNER_EMAIL` | `argandtutors@gmail.com` | **Where new tutor applications are emailed** |
 | `BREVO_API_KEY` | *(none)* | Turns on email via Brevo. Works without owning a domain |
 | `RESEND_API_KEY` | *(none)* | Turns on email via Resend. Needs a verified domain |
 | `BREVO_SENDER` | your `OWNER_EMAIL` | Address Brevo sends from — must be verified in Brevo |
@@ -152,6 +203,7 @@ All optional — the site runs without any of them. Set them as environment vari
 | `DB_PATH` | `./data.json` | Where records are stored when there's no database |
 | `DATABASE_URL` | *(none)* | Postgres connection string. Set it and records live there instead |
 | `CONTACT_EMAIL` | your `OWNER_EMAIL` | Address shown on the contact page and in emails |
+| `VERIFY_CUSTOMER_EMAIL` | `false` | Set to `true` to make customers enter a code before booking |
 | `ADMIN_PASSWORD` | `Confazzled28@` | Initial admin password. Change it in the console after first sign-in |
 | `PLATFORM_COMMISSION` | `0.2` | Starting cut. After first run, change it in the admin console instead |
 | `ENCRYPTION_KEY` | *(auto-generated)* | Key for encrypting bank details. Set this on Render |
@@ -228,6 +280,26 @@ node server.js
 Then: apply as yourself, take the code from your inbox, set your availability, and book a session as a
 test parent using a second email address. You should end up with a real calendar invite, a Stripe test
 payment, and emails on both sides.
+
+## Checking the database is actually saving
+
+Visit `/api/health` on your live site. You want:
+
+```json
+{ "ok": true, "storage": "postgres", "writeFailures": 0, "lastWriteAt": "..." }
+```
+
+- `storage: "file"` means the database isn't in use. `databaseUrlSet` and `pgDriverInstalled`
+  tell you which part is missing, and `storageError` gives the reason if the connection failed.
+- `unsavedLocalChanges` above zero means changes were accepted while the database was
+  unreachable. They're pushed across automatically once it reconnects.
+- `writeFailures` above zero means saves are failing. `lastWriteError` says why.
+- `lastWriteAt` should never be more than about five minutes old — the server writes
+  periodically on purpose, so a stale timestamp means writes have stopped.
+
+Neon suspends an idle database after a few minutes. The server uses a connection pool and
+retries once, so it reconnects by itself. If a write fails anyway, a copy is saved to
+`data.json.backup` next to the server and the failure is logged loudly.
 
 ## Putting it online
 

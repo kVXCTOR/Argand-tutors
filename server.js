@@ -95,6 +95,9 @@ let pg = null;
 let pgWriteFailures = 0;
 let lastWriteAt = null;
 let lastWriteError = null;
+let storageError = null;        // why the database isn't being used, in plain text
+let localWritesSinceBoot = 0;   // so a late connection doesn't overwrite recent changes
+let connectAttempts = 0;
 
 async function initPg(ClientOverride) {
   if (!DATABASE_URL) return false;
@@ -107,7 +110,7 @@ async function initPg(ClientOverride) {
     ssl: { require: true, rejectUnauthorized: false },
     max: 3,
     idleTimeoutMillis: 30000,        // let idle connections go before Neon drops them
-    connectionTimeoutMillis: 15000   // Neon takes a moment to wake
+    connectionTimeoutMillis: 30000   // a suspended Neon database can take ~20s to wake
   });
   // a dropped idle connection raises an error on the pool; without this the
   // process would exit
@@ -115,9 +118,43 @@ async function initPg(ClientOverride) {
 
   await pgQuery("CREATE TABLE IF NOT EXISTS store (id int PRIMARY KEY, doc jsonb NOT NULL)");
   const r = await pgQuery("SELECT doc FROM store WHERE id = 1");
-  if (r.rows.length) { db = hydrate({ ...EMPTY, ...r.rows[0].doc }); await writePg(); }
-  else await pgQuery("INSERT INTO store (id, doc) VALUES (1, $1)", [JSON.stringify(db)]);
+  if (r.rows.length && !localWritesSinceBoot) {
+    // nothing has changed locally, so the stored document is the truth
+    db = hydrate({ ...EMPTY, ...r.rows[0].doc });
+    await writePg();
+  } else {
+    // either the table is empty, or we accepted changes while the database was
+    // unreachable — either way ours is newer
+    await pgQuery("INSERT INTO store (id, doc) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET doc = $1",
+      [JSON.stringify(db)]);
+  }
+  storageError = null;
   return true;
+}
+
+// A database that was merely asleep shouldn't condemn the site to file storage
+// for the rest of its life. Keep trying quietly in the background.
+function scheduleReconnect() {
+  if (!DATABASE_URL || pg) return;
+  connectAttempts++;
+  const wait = connectAttempts <= 10 ? 30000 : 300000;   // 30s, then every 5 min
+  setTimeout(() => {
+    if (pg) return;
+    initPg()
+      .then(() => {
+        console.log(`\n  Database reached on attempt ${connectAttempts + 1}. ` +
+          (localWritesSinceBoot
+            ? `${localWritesSinceBoot} change(s) made while it was unreachable have been saved to it.`
+            : "Storage is now Postgres.") + "\n");
+        localWritesSinceBoot = 0;
+      })
+      .catch(err => {
+        storageError = err.message;
+        if (connectAttempts % 10 === 0)
+          console.error(`Still can't reach the database after ${connectAttempts} attempts: ${err.message}`);
+        scheduleReconnect();
+      });
+  }, wait).unref();
 }
 
 // One retry, because the first query after the database wakes often fails.
@@ -154,6 +191,7 @@ function emergencyBackup() {
 }
 
 function save(db) {
+  if (!pg) localWritesSinceBoot++;
   if (pg) {
     writePg().catch(e => {
       pgWriteFailures++;
@@ -1132,7 +1170,9 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/health") return json(res, 200, {
       ok: pgWriteFailures === 0,
       storage: pg ? "postgres" : "file",
+      storageError,
       databaseUrlSet: !!DATABASE_URL,
+      unsavedLocalChanges: localWritesSinceBoot,
       pgDriverInstalled: (() => { try { require.resolve("pg"); return true; } catch { return false; } })(),
       lastWriteAt, lastWriteError, writeFailures: pgWriteFailures,
       tutors: db.tutors.filter(t => t.active).length,
@@ -1559,8 +1599,11 @@ initPg().catch(err => {
     console.error("  behind a Show button \u2014 reveal it before copying.");
   }
   console.error("\n  Falling back to " + DB_PATH + ", so the site runs but data is lost on restart.");
+  console.error("  Retrying in the background \u2014 check /api/health for the current state.");
   console.error("  ########################################\n");
   pg = null;
+  storageError = err.message;
+  scheduleReconnect();
 }).then(() => {
 
 server.listen(PORT, () => {
