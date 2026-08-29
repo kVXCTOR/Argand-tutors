@@ -1132,6 +1132,8 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/health") return json(res, 200, {
       ok: pgWriteFailures === 0,
       storage: pg ? "postgres" : "file",
+      databaseUrlSet: !!DATABASE_URL,
+      pgDriverInstalled: (() => { try { require.resolve("pg"); return true; } catch { return false; } })(),
       lastWriteAt, lastWriteError, writeFailures: pgWriteFailures,
       tutors: db.tutors.filter(t => t.active).length,
       bookings: db.bookings.length,
@@ -1543,8 +1545,21 @@ if (process.argv.includes("--test-db")) {
 } else
 
 initPg().catch(err => {
-  console.error("\n  Could not reach the database: " + err.message);
-  console.error("  Falling back to " + DB_PATH + " so the site still runs.\n");
+  console.error("\n  ####  COULD NOT REACH THE DATABASE  ####");
+  console.error("  " + err.message);
+  if (/Cannot find module 'pg'/.test(err.message)) {
+    console.error("\n  The Postgres driver isn't installed. Your package.json needs:");
+    console.error('      "dependencies": { "pg": "^8.13.1" }');
+    console.error("  Push the updated package.json and redeploy \u2014 Render runs npm install for you.");
+  } else if (/getaddrinfo|ENOTFOUND|ECONNREFUSED/.test(err.message)) {
+    console.error("\n  The host in DATABASE_URL couldn't be found. Check it was copied whole,");
+    console.error("  and that you used the pooled string (it has -pooler in the hostname).");
+  } else if (/password|authentication/i.test(err.message)) {
+    console.error("\n  The username or password was rejected. Neon sometimes hides the password");
+    console.error("  behind a Show button \u2014 reveal it before copying.");
+  }
+  console.error("\n  Falling back to " + DB_PATH + ", so the site runs but data is lost on restart.");
+  console.error("  ########################################\n");
   pg = null;
 }).then(() => {
 
@@ -1563,7 +1578,18 @@ server.listen(PORT, () => {
     console.log(`\n  \u26a0  The admin account is still on its default password.\n     Sign in and change it under Admin \u2192 Security before going live.\n`);
   if (!process.env.ENCRYPTION_KEY)
     console.log(`Bank details: encrypted with the key in ${KEY_PATH} \u2014 back this file up, and never commit it`);
-  console.log(`Storage:      ${pg ? "Postgres (survives restarts)" : DB_PATH + " (a file \u2014 lost if the host wipes its disk)"}`);
+  if (pg) {
+    console.log(`Storage:      Postgres (survives restarts)`);
+  } else if (!DATABASE_URL) {
+    console.log(`Storage:      ${DB_PATH} (a file \u2014 lost if the host wipes its disk)`);
+    console.log(`\n  \u26a0  DATABASE_URL is not set, so this server never tried to reach a database.`);
+    console.log(`     On Render: Environment \u2192 Add Environment Variable \u2192 key DATABASE_URL.`);
+    console.log(`     Check the spelling exactly, and that you saved and redeployed.\n`);
+  } else {
+    console.log(`Storage:      ${DB_PATH} (a file \u2014 THE DATABASE IS SET BUT UNREACHABLE)`);
+    console.log(`\n  \u26a0  DATABASE_URL was found but the connection failed. The reason is`);
+    console.log(`     printed above, starting "Could not reach the database".\n`);
+  }
   HOME = findHomePage();
   if (HOME.warning) {
     console.log(`\n  ⚠  ${HOME.warning}\n`);
